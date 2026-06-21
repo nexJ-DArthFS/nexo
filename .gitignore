@@ -258,5 +258,6 @@ coverage/
 # Archivos del sistema operativo
 .DS_Store
 Thumbs.db
+
 # Configuración local de Visual Studio
 .vs/
