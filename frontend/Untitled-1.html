@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="description" content="NEXORA MVP: página inicial en HTML puro, sin CSS ni JavaScript.">
+  <meta name="keywords" content="NEXORA, MVP, asistente, aprendizaje, proyectos, HTML">
+  <meta name="author" content="NEXORA">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NEXORA MVP | HTML puro</title>
+</head>
+
+<body>
+
+  <header id="inicio">
+    <h1>NEXORA MVP</h1>
+    <p><strong>Esqueleto de interacción en HTML puro</strong></p>
+    <p>
+      Una página inicial construida sin CSS y sin JavaScript, usando etiquetas semánticas,
+      formularios, navegación interna, tablas, listas, detalles expandibles y estructura profesional.
+    </p>
+
+    <nav aria-label="Navegación principal">
+      <h2>Mapa rápido</h2>
+      <ul>
+        <li><a href="#vision">Visión</a></li>
+        <li><a href="#interaccion">Interacción simulada</a></li>
+        <li><a href="#modulos">Módulos</a></li>
+        <li><a href="#flujo">Flujo del sistema</a></li>
+        <li><a href="#formulario">Entrada del usuario</a></li>
+        <li><a href="#historial">Historial tipo commit</a></li>
+      </ul>
+    </nav>
+
+    <hr>
+  </header>
+
+  <main>
+
+    <section id="vision">
+      <h2>1. Visión central</h2>
+
+      <article>
+        <h3>¿Qué es NEXORA?</h3>
+        <p>
+          NEXORA es un concepto de asistente organizado para convertir ideas, dudas y tareas
+          en planes claros. En este MVP no hay backend ni inteligencia artificial real:
+          solo se presenta la estructura visual y lógica de la experiencia.
+        </p>
+      </article>
+
+      <article>
+        <h3>Promesa del MVP</h3>
+        <blockquote>
+          De una idea desordenada a una ruta de acción organizada.
+        </blockquote>
+      </article>
+
+      <details>
+        <summary>Principio de diseño</summary>
+        <p>
+          La página está hecha para mostrar cómo se podría sentir una primera interacción:
+          el usuario escribe, el sistema clasifica, estructura y propone un siguiente paso.
+        </p>
+      </details>
+
+      <p><a href="#inicio">Volver arriba</a></p>
+      <hr>
+    </section>
+
+    <section id="interaccion">
+      <h2>2. Interacción simulada</h2>
+
+      <article aria-label="Conversación simulada">
+        <h3>Vista tipo asistente</h3>
+
+        <dl>
+          <dt><strong>Usuario</strong></dt>
+          <dd>Necesito convertir una idea en un proyecto MVP.</dd>
+
+          <dt><strong>NEXORA</strong></dt>
+          <dd>
+            Primero separaré tu idea en objetivo, módulos, riesgos y siguiente acción.
+          </dd>
+
+          <dt><strong>Usuario</strong></dt>
+          <dd>Quiero una página inicial sin funcionalidad completa.</dd>
+
+          <dt><strong>NEXORA</strong></dt>
+          <dd>
+            Entonces construiremos un esqueleto de interacción: navegación, secciones,
+            módulos, formulario y registro de avances.
+          </dd>
+        </dl>
+      </article>
+
+      <details>
+        <summary>Lectura interna simulada del sistema</summary>
+        <ol>
+          <li>Detectar intención del usuario.</li>
+          <li>Clasificar la petición.</li>
+          <li>Separar en módulos.</li>
+          <li>Proponer una acción mínima.</li>
+          <li>Guardar la decisión en historial.</li>
+        </ol>
+      </details>
+
+      <p><a href="#inicio">Volver arriba</a></p>
+      <hr>
+    </section>
+
+    <section id="modulos">
+      <h2>3. Módulos principales</h2>
+
+      <table border="1">
+        <caption>Módulos base del MVP</caption>
+        <thead>
+          <tr>
+            <th scope="col">Módulo</th>
+            <th scope="col">Función conceptual</th>
+            <th scope="col">Estado en este MVP</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Dashboard</th>
+            <td>Mostrar el estado general del sistema.</td>
+            <td>Representado como sección HTML.</td>
+          </tr>
+          <tr>
+            <th scope="row">Ideas</th>
+            <td>Registrar conceptos, hipótesis y preguntas nuevas.</td>
+            <td>Representado con listas y detalles.</td>
+          </tr>
+          <tr>
+            <th scope="row">Asistente</th>
+            <td>Simular conversación entre usuario y sistema.</td>
+            <td>Representado con lista de descripción.</td>
+          </tr>
+          <tr>
+            <th scope="row">Historial</th>
+            <td>Guardar avances como si fueran commits.</td>
+            <td>Representado con tabla cronológica.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Jerarquía del producto</h3>
+      <ul>
+        <li>
+          NEXORA
+          <ul>
+            <li>Entrada del usuario</li>
+            <li>Clasificación de intención</li>
+            <li>Estructura de respuesta</li>
+            <li>Registro de avance</li>
+          </ul>
+        </li>
+      </ul>
+
+      <p><a href="#inicio">Volver arriba</a></p>
+      <hr>
+    </section>
+
+    <section id="flujo">
+      <h2>4. Flujo del sistema</h2>
+
+      <ol>
+        <li>
+          <strong>Entrada:</strong>
+          el usuario escribe una idea, una duda o una meta.
+        </li>
+        <li>
+          <strong>Clasificación:</strong>
+          el sistema determina si es proyecto, estudio, código, investigación o archivo.
+        </li>
+        <li>
+          <strong>Estructuración:</strong>
+          se separa en objetivo, componentes, riesgos y siguiente acción.
+        </li>
+        <li>
+          <strong>Salida:</strong>
+          el usuario recibe un plan mínimo y claro.
+        </li>
+        <li>
+          <strong>Historial:</strong>
+          la decisión queda registrada como avance.
+        </li>
+      </ol>
+
+      <figure>
+        <figcaption>Diagrama textual del flujo</figcaption>
+        <pre>
+[Idea del usuario]
+        |
+        v
+[Clasificación]
+        |
+        v
+[Objetivo + módulos + riesgos]
+        |
+        v
+[Siguiente acción]
+        |
+        v
+[Historial tipo commit]
+        </pre>
+      </figure>
+
+      <p><a href="#inicio">Volver arriba</a></p>
+      <hr>
+    </section>
+
+    <section id="formulario">
+      <h2>5. Entrada del usuario</h2>
+
+      <p>
+        Este formulario no envía información a un servidor. Solo representa cómo podría verse
+        la entrada inicial del sistema usando HTML puro.
+      </p>
+
+      <form action="#" method="get">
+        <fieldset>
+          <legend>Crear nueva idea</legend>
+
+          <p>
+            <label for="titulo">Título de la idea:</label><br>
+            <input type="text" id="titulo" name="titulo" placeholder="Ejemplo: asistente académico" required>
+          </p>
+
+          <p>
+            <label for="tipo">Tipo de entrada:</label><br>
+            <select id="tipo" name="tipo">
+              <option value="proyecto">Proyecto</option>
+              <option value="estudio">Estudio</option>
+              <option value="codigo">Código</option>
+              <option value="investigacion">Investigación</option>
+              <option value="archivo">Archivo / historial</option>
+            </select>
+          </p>
+
+          <p>
+            <label for="prioridad">Prioridad:</label><br>
+            <input type="range" id="prioridad" name="prioridad" min="1" max="5" value="3">
+          </p>
+
+          <p>
+            <label for="fecha">Fecha objetivo:</label><br>
+            <input type="date" id="fecha" name="fecha">
+          </p>
+
+          <p>
+            <label for="descripcion">Descripción:</label><br>
+            <textarea id="descripcion" name="descripcion" rows="6" cols="50"
+              placeholder="Describe tu idea..."></textarea>
+          </p>
+
+          <p>
+            <label>
+              <input type="checkbox" name="guardar" checked>
+              Guardar esta entrada en historial
+            </label>
+          </p>
+
+          <p>
+            <button type="submit">Simular registro</button>
+            <button type="reset">Limpiar</button>
+          </p>
+        </fieldset>
+      </form>
+
+      <p><a href="#inicio">Volver arriba</a></p>
+      <hr>
+    </section>
+
+    <section id="historial">
+      <h2>6. Historial tipo commit</h2>
+
+      <table border="1">
+        <caption>Registro conceptual de avances</caption>
+        <thead>
+          <tr>
+            <th scope="col">Commit</th>
+            <th scope="col">Decisión</th>
+            <th scope="col">Resultado</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>nexora-0001</td>
+            <td>Definir página inicial</td>
+            <td>Se crea estructura general.</td>
+          </tr>
+          <tr>
+            <td>nexora-0002</td>
+            <td>Separar módulos</td>
+            <td>Dashboard, ideas, asistente e historial.</td>
+          </tr>
+          <tr>
+            <td>nexora-0003</td>
+            <td>Eliminar CSS</td>
+            <td>Se conserva HTML semántico puro.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <details>
+        <summary>Ideas futuras</summary>
+        <ul>
+          <li>Separar archivos: index.html, style.css y script.js.</li>
+          <li>Agregar almacenamiento local.</li>
+          <li>Conectar con backend.</li>
+          <li>Crear sistema real de historial.</li>
+        </ul>
+      </details>
+
+      <p><a href="#inicio">Volver arriba</a></p>
+      <hr>
+    </section>
+
+  </main>
+
+  <aside>
+    <h2>Nota del MVP</h2>
+    <p>
+      Esta versión aprovecha HTML puro: estructura semántica, navegación interna,
+      formularios, tablas, listas, detalles expandibles, campos accesibles y contenido organizado.
+    </p>
+  </aside>
+
+  <footer>
+    <p><strong>NEXORA MVP</strong> — Prototipo inicial sin CSS y sin JavaScript.</p>
+    <address>
+      Proyecto conceptual de aprendizaje, tecnología y organización de ideas.
+    </address>
+    <p><a href="#inicio">Regresar al inicio</a></p>
+  </footer>
+
+</body>
+
+</html>

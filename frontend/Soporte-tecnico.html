@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Soporte Técnico - NEXORA</title>
+</head>
+<body>
+	<header>
+		<h1>Soporte Técnico</h1>
+		<p>Formulario de contacto para reportar incidencias o solicitar asistencia.</p>
+	</header>
+
+	<main>
+		<section>
+			<h2>Datos del solicitante</h2>
+			<form action="#" method="post">
+				<label for="nombre">Nombre completo:</label><br>
+				<input type="text" id="nombre" name="nombre" required><br><br>
+
+				<label for="correo">Correo electrónico:</label><br>
+				<input type="email" id="correo" name="correo" required><br><br>
+
+				<label for="telefono">Teléfono (opcional):</label><br>
+				<input type="tel" id="telefono" name="telefono"><br><br>
+
+				<h2>Detalles del problema</h2>
+
+				<label for="producto">Producto o servicio:</label><br>
+				<input type="text" id="producto" name="producto"><br><br>
+
+				<label for="prioridad">Prioridad:</label><br>
+				<select id="prioridad" name="prioridad">
+					<option value="baja">Baja</option>
+					<option value="media">Media</option>
+					<option value="alta">Alta</option>
+				</select><br><br>
+
+				<label for="descripcion">Descripción del problema:</label><br>
+				<textarea id="descripcion" name="descripcion" rows="6" required></textarea><br><br>
+
+				<label for="adjunto">Adjuntar archivo (opcional):</label><br>
+				<input type="file" id="adjunto" name="adjunto"><br><br>
+
+				<input type="submit" value="Enviar solicitud">
+			</form>
+		</section>
+
+		<section>
+			<h2>Información adicional</h2>
+			<p>Horario de atención: Lunes a Viernes, 9:00 - 18:00.</p>
+			<p>Teléfono de soporte: +56 9 0000 0000</p>
+		</section>
+	</main>
+
+	<footer>
+		<p> NEXUS - Soporte Técnico</p>
+	</footer>
+</body>
+</html>
