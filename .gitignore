@@ -261,3 +261,6 @@ Thumbs.db
 
 # Configuración local de Visual Studio
 .vs/
+
+backend/.env
+backend/node_modules/

@@ -1,10 +1,33 @@
 
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 
+const session = require("express-session");
+const MongoStore = require("connect-mongo").default;
+
+const { connectDB, getDB } = require("./config/db");
+
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
+
+// ==========================================
+// 1. VALIDACIÓN DE CONFIGURACIÓN
+// ==========================================
+
+if (!process.env.MONGODB_URI) {
+  throw new Error("Falta MONGODB_URI en el archivo .env");
+}
+
+if (!process.env.SESSION_SECRET) {
+  throw new Error("Falta SESSION_SECRET en el archivo .env");
+}
+
+// ==========================================
+// 2. MIDDLEWARES
+// ==========================================
 
 app.use(helmet());
 
@@ -12,12 +35,50 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173",
-      "http://127.0.0.1:5173"
-    ]
+      "http://127.0.0.1:5173",
+    ],
+    credentials: true,
   })
 );
 
 app.use(express.json({ limit: "100kb" }));
+
+// ==========================================
+// 3. GESTIÓN DE SESIONES
+// ==========================================
+
+app.use(
+  session({
+    name: "nexora.sid",
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+
+    store: MongoStore.create({
+      mongoUrl: process.env.MONGODB_URI,
+      dbName: "nexora",
+      collectionName: "sessions",
+    }),
+
+    cookie: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 1000 * 60 * 60 * 24 * 7,
+      path: "/",
+    },
+  })
+);
+
+// ==========================================
+// 4. RUTAS DE AUTENTICACIÓN
+// ==========================================
+
+app.use("/api/auth", require("./routes/auth"));
+
+// ==========================================
+// 5. CONFIGURACIÓN DEL ANÁLISIS DE NOTAS
+// ==========================================
 
 const MAX_NOTE_LENGTH = 20000;
 
@@ -74,6 +135,10 @@ const rules = [
   }
 ];
 
+// ==========================================
+// 6. FUNCIONES DE CLASIFICACIÓN
+// ==========================================
+
 function classifyFragment(text) {
   for (const rule of rules) {
     if (rule.patterns.some((pattern) => pattern.test(text))) {
@@ -98,12 +163,20 @@ function splitIntoFragments(text) {
     .filter(Boolean);
 }
 
+// ==========================================
+// 7. RUTA DE ESTADO DEL SERVIDOR
+// ==========================================
+
 app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
     service: "NEXORA Notes API"
   });
 });
+
+// ==========================================
+// 8. RUTA DE ANÁLISIS DE NOTAS
+// ==========================================
 
 app.post("/api/notes/analyze", (req, res) => {
   const text = req.body?.text;
@@ -168,6 +241,10 @@ app.post("/api/notes/analyze", (req, res) => {
   });
 });
 
+// ==========================================
+// 9. MANEJADOR GLOBAL DE ERRORES
+// ==========================================
+
 app.use((error, _req, res, _next) => {
   if (error instanceof SyntaxError && "body" in error) {
     return res.status(400).json({
@@ -175,14 +252,36 @@ app.use((error, _req, res, _next) => {
     });
   }
 
-  console.error("Error en NEXORA API:", error.message);
+  console.error("ERROR COMPLETO EN NEXORA:", error);
 
   return res.status(500).json({
     error: "Ocurrió un error interno al procesar la solicitud."
   });
 });
 
-app.listen(PORT, "127.0.0.1", () => {
-  console.log(`NEXORA API disponible en http://127.0.0.1:${PORT}`);
-  console.log(`Comprobación: http://127.0.0.1:${PORT}/api/health`);
+// ==========================================
+// 10. INICIALIZACIÓN DEL SERVIDOR
+// ==========================================
+
+async function startServer() {
+  await connectDB();
+
+  await getDB()
+    .collection("users")
+    .createIndex({ email: 1 }, { unique: true });
+
+  app.listen(PORT, "127.0.0.1", () => {
+    console.log("------------------------------------");
+    console.log("NEXORA BACKEND INICIADO");
+    console.log(`Servidor: http://127.0.0.1:${PORT}`);
+    console.log(`Estado: http://127.0.0.1:${PORT}/api/health`);
+    console.log("Autenticación: /api/auth");
+    console.log("Análisis: /api/notes/analyze");
+    console.log("------------------------------------");
+  });
+}
+
+startServer().catch((error) => {
+  console.error("No se pudo iniciar NEXORA:", error);
+  process.exit(1);
 });
