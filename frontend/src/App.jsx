@@ -1,9 +1,11 @@
-import { Navigate, Route, Routes } from "react-router-dom";
 
+import { Navigate, Route, Routes } from "react-router-dom";
+import AdminDashboard from "./AdminDashboard.jsx";
 import Welcome from "./Welcome.jsx";
 import Auth from "./Auth.jsx";
 import Dashboard from "./Dashboard.jsx";
 import ProtectedRoute from "./ProtectedRoute.jsx";
+import AdminRoute from "./AdminRoute.jsx";
 
 function App() {
   return (
@@ -26,6 +28,15 @@ function App() {
           <ProtectedRoute>
             <Dashboard />
           </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin"
+        element={
+          <AdminRoute>
+           <AdminDashboard />
+          </AdminRoute>
         }
       />
 

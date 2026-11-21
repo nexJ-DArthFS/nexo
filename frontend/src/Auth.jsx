@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { useAuth } from "./AuthContext.jsx";
 import { Link, useNavigate } from "react-router-dom";
@@ -16,95 +17,112 @@ export default function Auth({ mode = "login" }) {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
 
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setError("");
 
-async function handleSubmit(event) {
-  event.preventDefault();
-  setError("");
+    if (loading) return;
 
-  if (loading) return;
+    if (!email.trim() || !password) {
+      setError("Completa tu correo electrónico y contraseña.");
+      return;
+    }
 
-  if (!email.trim() || !password) {
-    setError("Completa tu correo electrónico y contraseña.");
-    return;
-  }
+    if (!isLogin && !name.trim()) {
+      setError("Escribe tu nombre para crear tu cuenta.");
+      return;
+    }
 
-  if (!isLogin && !name.trim()) {
-    setError("Escribe tu nombre para crear tu cuenta.");
-    return;
-  }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError("Introduce un correo electrónico válido.");
+      return;
+    }
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-    setError("Introduce un correo electrónico válido.");
-    return;
-  }
+    if (password.length < 8) {
+      setError("La contraseña debe tener al menos 8 caracteres.");
+      return;
+    }
 
-  if (password.length < 8) {
-    setError("La contraseña debe tener al menos 8 caracteres.");
-    return;
-  }
+    if (!isLogin && password !== confirmPassword) {
+      setError("Las contraseñas no coinciden.");
+      return;
+    }
 
-  if (!isLogin && password !== confirmPassword) {
-    setError("Las contraseñas no coinciden.");
-    return;
-  }
+    setLoading(true);
 
-  setLoading(true);
+    try {
+      const endpoint = isLogin
+        ? "http://localhost:3001/api/auth/login"
+        : "http://localhost:3001/api/auth/register";
 
-  try {
-    const endpoint = isLogin
-  ? "http://localhost:3001/api/auth/login"
-  : "http://localhost:3001/api/auth/register";;
-
-    const payload = isLogin
-      ? {
+      const payload = isLogin
+        ? {
           email: email.trim(),
           password,
         }
-      : {
+        : {
           name: name.trim(),
           email: email.trim(),
           password,
         };
 
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      credentials: "include",
-      body: JSON.stringify(payload),
-    });
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
 
-    const data = await response.json().catch(() => ({}));
+      const data = await response.json().catch(() => ({}));
 
-    if (!response.ok) {
-      throw new Error(
-        data.error || `Error del servidor: ${response.status}`
+      if (!response.ok) {
+        throw new Error(
+          data.error || `Error del servidor: ${response.status}`
+        );
+      }
+
+      // Actualizar el usuario y sus permisos desde la sesión.
+      const authenticatedSession = await refreshUser();
+
+      if (!authenticatedSession?.user) {
+        throw new Error(
+          "La autenticación respondió correctamente, pero no se pudo verificar la sesión."
+        );
+      }
+
+      // Redirigir según los permisos efectivos.
+      const isAdmin = authenticatedSession.permissions.some(
+        (permission) => permission.key === "users.read"
       );
-    }
 
-    // Actualizar el usuario global desde la sesión.
-    const authenticatedUser = await refreshUser();
+      console.log("SESIÓN:", authenticatedSession);
+      console.log("¿ES ADMINISTRADOR?:", isAdmin);
 
-    if (!authenticatedUser) {
-      throw new Error(
-        "La autenticación respondió correctamente, pero no se pudo verificar la sesión."
+      console.log("SESIÓN:", authenticatedSession);
+      console.log(
+        "PERMISO users.read:",
+        authenticatedSession?.permissions?.some(
+          (permission) => permission.key === "users.read"
+        )
       );
+      console.log("DESTINO:", isAdmin ? "/admin" : "/app");
+
+      navigate(isAdmin ? "/admin" : "/app", {
+        replace: true,
+      });
+
+    } catch (error) {
+      console.error("Error de autenticación:", error);
+
+      setError(
+        error.message || "No se pudo conectar con el servidor."
+      );
+    } finally {
+      setLoading(false);
     }
-
-    navigate("/app", { replace: true });
-
-  } catch (error) {
-    console.error("Error de autenticación:", error);
-
-    setError(
-      error.message || "No se pudo conectar con el servidor."
-    );
-  } finally {
-    setLoading(false);
   }
-}
-
 
   return (
     <main className="auth-page">
@@ -114,7 +132,9 @@ async function handleSubmit(event) {
       <header className="auth-header">
         <Link to="/" className="auth-brand" aria-label="Volver al inicio de NEXORA">
           <span className="auth-brand-symbol">✳</span>
-          <span>NEXORA<span className="auth-brand-dot">.</span></span>
+          <span>
+            NEXORA<span className="auth-brand-dot">.</span>
+          </span>
         </Link>
 
         <Link to="/" className="auth-back-link">
@@ -253,7 +273,9 @@ async function handleSubmit(event) {
                 <span className="auth-security-note">
                   <span>◇</span> Acceso a tu espacio personal
                 </span>
-                <span className="auth-soon-label">Recuperación próximamente</span>
+                <span className="auth-soon-label">
+                  Recuperación próximamente
+                </span>
               </div>
             )}
 
@@ -280,18 +302,18 @@ async function handleSubmit(event) {
             )}
 
             <button
-  type="submit"
-  className="auth-submit"
-  disabled={loading}
->
-  {loading
-    ? "Procesando..."
-    : isLogin
-      ? "Entrar a NEXORA"
-      : "Crear mi cuenta"}
+              type="submit"
+              className="auth-submit"
+              disabled={loading}
+            >
+              {loading
+                ? "Procesando..."
+                : isLogin
+                  ? "Entrar a NEXORA"
+                  : "Crear mi cuenta"}
 
-  {!loading && <span>↗</span>}
-</button>
+              {!loading && <span>↗</span>}
+            </button>
           </form>
 
           <p className="auth-switch-copy">

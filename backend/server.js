@@ -1,147 +1,190 @@
 
-require("dotenv").config();
+'use strict';
 
-const express = require("express");
-const cors = require("cors");
-const helmet = require("helmet");
+require('dotenv').config();
 
-const session = require("express-session");
-const MongoStore = require("connect-mongo").default;
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const session = require('express-session');
+const MongoStore = require('connect-mongo').default;
 
-const { connectDB, getDB } = require("./config/db");
+const {
+  connectDB,
+  getDB,
+  closeDB
+} = require('./config/db');
+
+const usersRoutes = require('./modules/users/users.routes');
+const accessRoutes = require('./modules/access/access.routes');
+// ======================================================
+// 1. CONFIGURACIÓN
+// ======================================================
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3001;
 
-// ==========================================
-// 1. VALIDACIÓN DE CONFIGURACIÓN
-// ==========================================
+const PORT = Number(process.env.PORT) || 3001;
+const HOST = process.env.HOST || '127.0.0.1';
+
+const isProduction = process.env.NODE_ENV === 'production';
 
 if (!process.env.MONGODB_URI) {
-  throw new Error("Falta MONGODB_URI en el archivo .env");
+  throw new Error('Falta MONGODB_URI en el archivo .env');
 }
 
 if (!process.env.SESSION_SECRET) {
-  throw new Error("Falta SESSION_SECRET en el archivo .env");
+  throw new Error('Falta SESSION_SECRET en el archivo .env');
 }
 
-// ==========================================
+if (process.env.SESSION_SECRET.length < 32) {
+  throw new Error('SESSION_SECRET debe tener al menos 32 caracteres.');
+}
+
+if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+  throw new Error('El puerto configurado no es válido.');
+}
+
+// ======================================================
 // 2. MIDDLEWARES
-// ==========================================
+// ======================================================
+
+if (isProduction) {
+  app.set('trust proxy', 1);
+}
+
+app.disable('x-powered-by');
+
 
 app.use(helmet());
 
-app.use(
-  cors({
-    origin: [
-      "http://localhost:5173",
-      "http://127.0.0.1:5173",
-    ],
-    credentials: true,
-  })
-);
+const allowedOrigins = (
+  process.env.CORS_ORIGINS ||
+  'http://localhost:5173,http://127.0.0.1:5173'
+)
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
 
-app.use(express.json({ limit: "100kb" }));
+app.use(cors({
+  origin(origin, callback) {
+    // Permite solicitudes sin Origin, como algunas herramientas
+    // locales y procesos internos.
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
 
-// ==========================================
-// 3. GESTIÓN DE SESIONES
-// ==========================================
+    return callback(new Error('Origen no autorizado por CORS.'));
+  },
+  credentials: true
+}));
 
-app.use(
-  session({
-    name: "nexora.sid",
-    secret: process.env.SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
+app.use(express.json({
+  limit: '100kb'
+}));
 
-    store: MongoStore.create({
-      mongoUrl: process.env.MONGODB_URI,
-      dbName: "nexora",
-      collectionName: "sessions",
-    }),
+// ======================================================
+// 3. SESIONES
+// ======================================================
 
-    cookie: {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 1000 * 60 * 60 * 24 * 7,
-      path: "/",
-    },
-  })
-);
+const sessionStore = MongoStore.create({
+  mongoUrl: process.env.MONGODB_URI,
+  dbName: 'nexora',
+  collectionName: 'sessions',
+  autoRemove: 'native'
+});
 
-// ==========================================
-// 4. RUTAS DE AUTENTICACIÓN
-// ==========================================
+app.use(session({
+  name: 'nexora.sid',
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  rolling: true,
+  store: sessionStore,
+  cookie: {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax',
+    maxAge: 1000 * 60 * 60 * 24 * 7,
+    path: '/'
+  }
+}));
 
-app.use("/api/auth", require("./routes/auth"));
+// ======================================================
+// 4. RUTAS DE AUTENTICACIÓN Y USUARIOS
+// ======================================================
 
-// ==========================================
-// 5. CONFIGURACIÓN DEL ANÁLISIS DE NOTAS
-// ==========================================
+app.use('/api/auth', require('./routes/auth'));
+
+app.use('/api/users', usersRoutes);
+
+app.use('/api/access', accessRoutes);
+
+// ======================================================
+// 5. CLASIFICADOR DE NOTAS
+// ======================================================
 
 const MAX_NOTE_LENGTH = 20000;
 
 const rules = [
   {
-    category: "tasks",
-    label: "Tarea",
+    category: 'tasks',
+    label: 'Tarea',
     patterns: [
       /\b(tengo que|debo|necesito|hay que|pendiente|por hacer|hacer|terminar|entregar|enviar|revisar|estudiar|preparar|llamar|comprar|investigar)\b/i
     ]
   },
   {
-    category: "objectives",
-    label: "Objetivo",
+    category: 'objectives',
+    label: 'Objetivo',
     patterns: [
       /\b(mi objetivo|objetivo|meta|quiero lograr|quiero alcanzar|me propongo|aspiración|aspirar a)\b/i
     ]
   },
   {
-    category: "questions",
-    label: "Pregunta",
+    category: 'questions',
+    label: 'Pregunta',
     patterns: [
       /[¿?]/,
       /\b(me pregunto|no sé si|cómo puedo|por qué|qué pasaría|averiguar si)\b/i
     ]
   },
   {
-    category: "decisions",
-    label: "Decisión",
+    category: 'decisions',
+    label: 'Decisión',
     patterns: [
       /\b(decidí|he decidido|decisión|elegí|elegir|optaré|voy a escoger|acordamos|acuerdo)\b/i
     ]
   },
   {
-    category: "concerns",
-    label: "Preocupación",
+    category: 'concerns',
+    label: 'Preocupación',
     patterns: [
       /\b(me preocupa|preocupado|preocupada|estresado|estresada|agobiado|agobiada|me cuesta|tengo miedo|me siento|agotado|agotada|confundido|confundida)\b/i
     ]
   },
   {
-    category: "ideas",
-    label: "Idea",
+    category: 'ideas',
+    label: 'Idea',
     patterns: [
       /\b(idea|se me ocurre|podría|podemos|sería interesante|propongo|imagino|crear|diseñar|inventar)\b/i
     ]
   },
   {
-    category: "knowledge",
-    label: "Conocimiento",
+    category: 'knowledge',
+    label: 'Conocimiento',
     patterns: [
       /\b(aprendí|descubrí|entendí|comprendí|principio|concepto|teorema|definición|significa|consiste en|observé)\b/i
     ]
   }
 ];
 
-// ==========================================
+// ======================================================
 // 6. FUNCIONES DE CLASIFICACIÓN
-// ==========================================
+// ======================================================
 
 function classifyFragment(text) {
   for (const rule of rules) {
-    if (rule.patterns.some((pattern) => pattern.test(text))) {
+    if (rule.patterns.some(pattern => pattern.test(text))) {
       return {
         category: rule.category,
         label: rule.label
@@ -150,40 +193,40 @@ function classifyFragment(text) {
   }
 
   return {
-    category: "review",
-    label: "Por revisar"
+    category: 'review',
+    label: 'Por revisar'
   };
 }
 
 function splitIntoFragments(text) {
   return text
-    .replace(/\r\n/g, "\n")
+    .replace(/\r\n/g, '\n')
     .split(/\n+|(?<=[.!?])\s+/)
-    .map((fragment) => fragment.trim())
+    .map(fragment => fragment.trim())
     .filter(Boolean);
 }
 
-// ==========================================
-// 7. RUTA DE ESTADO DEL SERVIDOR
-// ==========================================
+// ======================================================
+// 7. ESTADO DEL SERVIDOR
+// ======================================================
 
-app.get("/api/health", (_req, res) => {
+app.get('/api/health', (_req, res) => {
   res.json({
-    status: "ok",
-    service: "NEXORA Notes API"
+    status: 'ok',
+    service: 'NEXORA API'
   });
 });
 
-// ==========================================
-// 8. RUTA DE ANÁLISIS DE NOTAS
-// ==========================================
+// ======================================================
+// 8. ANÁLISIS DE NOTAS
+// ======================================================
 
-app.post("/api/notes/analyze", (req, res) => {
+app.post('/api/notes/analyze', (req, res) => {
   const text = req.body?.text;
 
-  if (typeof text !== "string") {
+  if (typeof text !== 'string') {
     return res.status(400).json({
-      error: "El campo text debe ser una cadena de texto."
+      error: 'El campo text debe ser una cadena de texto.'
     });
   }
 
@@ -191,7 +234,7 @@ app.post("/api/notes/analyze", (req, res) => {
 
   if (!normalizedText) {
     return res.status(400).json({
-      error: "Escribe una nota antes de analizarla."
+      error: 'Escribe una nota antes de analizarla.'
     });
   }
 
@@ -235,53 +278,226 @@ app.post("/api/notes/analyze", (req, res) => {
     items,
     grouped,
     notice:
-      "Clasificación orientativa: revisa los resultados y corrige las categorías que no representen tu intención.",
+      'Clasificación orientativa: revisa los resultados y corrige las categorías que no representen tu intención.',
     privacy:
-      "Esta API no guarda las notas en una base de datos. El texto se procesa en memoria durante la solicitud."
+      'Esta API no guarda las notas en una base de datos. El texto se procesa en memoria durante la solicitud.'
   });
 });
 
-// ==========================================
+// ======================================================
 // 9. MANEJADOR GLOBAL DE ERRORES
-// ==========================================
+// ======================================================
 
 app.use((error, _req, res, _next) => {
-  if (error instanceof SyntaxError && "body" in error) {
+  if (res.headersSent) {
+    return;
+  }
+
+  if (error instanceof SyntaxError && 'body' in error) {
     return res.status(400).json({
-      error: "El cuerpo de la solicitud contiene JSON inválido."
+      error: 'El cuerpo de la solicitud contiene JSON inválido.'
     });
   }
 
-  console.error("ERROR COMPLETO EN NEXORA:", error);
+  if (error.message === 'Origen no autorizado por CORS.') {
+    return res.status(403).json({
+      error: 'Origen no autorizado.'
+    });
+  }
 
-  return res.status(500).json({
-    error: "Ocurrió un error interno al procesar la solicitud."
+  console.error('ERROR EN NEXORA:', error);
+
+  return res.status(error.status || 500).json({
+    error: error.status
+      ? error.message
+      : 'Ocurrió un error interno al procesar la solicitud.'
   });
 });
 
-// ==========================================
-// 10. INICIALIZACIÓN DEL SERVIDOR
-// ==========================================
+// ======================================================
+// 10. ÍNDICES DE BASE DE DATOS
+// ======================================================
+
+async function createIndexes(db) {
+  // Usuarios.
+  await db.collection('users').createIndex(
+    { email: 1 },
+    {
+      unique: true,
+      name: 'email_1'
+    }
+  );
+
+  // Catálogo RBAC.
+  await db.collection('roles').createIndex(
+    { key: 1 },
+    {
+      unique: true,
+      name: 'key_1'
+    }
+  );
+
+  await db.collection('permissions').createIndex(
+    { key: 1 },
+    {
+      unique: true,
+      name: 'key_1'
+    }
+  );
+
+  // Permisos asociados a roles.
+  await db.collection('role_permissions').createIndex(
+    { roleId: 1, permissionId: 1 },
+    {
+      unique: true,
+      name: 'role_permission_unique'
+    }
+  );
+
+  // Asignaciones de roles.
+  await db.collection('role_assignments').createIndex(
+    { userId: 1, roleId: 1 },
+    {
+      name: 'user_role_assignment_lookup'
+    }
+  );
+
+  await db.collection('role_assignments').createIndex(
+    { roleId: 1, active: 1, expiresAt: 1 },
+    {
+      name: 'active_role_assignments_lookup'
+    }
+  );
+
+  // Auditoría.
+  await db.collection('audit_logs').createIndex(
+    { actorId: 1, createdAt: -1 },
+    {
+      name: 'audit_actor_created'
+    }
+  );
+
+  await db.collection('audit_logs').createIndex(
+    {
+      'target.type': 1,
+      'target.id': 1,
+      createdAt: -1
+    },
+    {
+      name: 'audit_target_created'
+    }
+  );
+}
+
+// ======================================================
+// 11. INICIALIZACIÓN
+// ======================================================
+
+let httpServer = null;
+let shuttingDown = false;
 
 async function startServer() {
   await connectDB();
 
-  await getDB()
-    .collection("users")
-    .createIndex({ email: 1 }, { unique: true });
+  const db = getDB();
 
-  app.listen(PORT, "127.0.0.1", () => {
-    console.log("------------------------------------");
-    console.log("NEXORA BACKEND INICIADO");
-    console.log(`Servidor: http://127.0.0.1:${PORT}`);
-    console.log(`Estado: http://127.0.0.1:${PORT}/api/health`);
-    console.log("Autenticación: /api/auth");
-    console.log("Análisis: /api/notes/analyze");
-    console.log("------------------------------------");
+  await createIndexes(db);
+
+  return new Promise((resolve, reject) => {
+    const server = app.listen(PORT, HOST);
+
+    server.once('error', reject);
+
+    server.once('listening', () => {
+      httpServer = server;
+
+      console.log('------------------------------------');
+      console.log('NEXORA BACKEND INICIADO');
+      console.log(`Servidor: http://${HOST}:${PORT}`);
+      console.log(`Estado: http://${HOST}:${PORT}/api/health`);
+      console.log('Autenticación: /api/auth');
+      console.log('Usuarios: /api/users');
+      console.log('Análisis: /api/notes/analyze');
+      console.log('------------------------------------');
+
+      resolve(server);
+    });
   });
 }
 
-startServer().catch((error) => {
-  console.error("No se pudo iniciar NEXORA:", error);
-  process.exit(1);
-});
+// ======================================================
+// 12. CIERRE ORDENADO
+// ======================================================
+
+async function shutdown(signal = 'shutdown') {
+  if (shuttingDown) {
+    return;
+  }
+
+  shuttingDown = true;
+
+  console.log(`\nCerrando NEXORA (${signal})...`);
+
+  try {
+    if (httpServer) {
+      await new Promise((resolve, reject) => {
+        httpServer.close(error => {
+          if (error) {
+            return reject(error);
+          }
+
+          resolve();
+        });
+      });
+    }
+
+    await sessionStore.close();
+    await closeDB();
+
+    console.log('NEXORA se cerró correctamente.');
+  } catch (error) {
+    console.error('Error durante el cierre:', error.message);
+    process.exitCode = 1;
+  }
+}
+
+// ======================================================
+// 13. EJECUCIÓN
+// ======================================================
+
+if (require.main === module) {
+  startServer().catch(async error => {
+    console.error('No se pudo iniciar NEXORA:', error.message);
+
+    try {
+      await sessionStore.close();
+      await closeDB();
+    } catch (closeError) {
+      console.error('Error al cerrar conexiones:', closeError.message);
+    }
+
+    process.exitCode = 1;
+  });
+
+  process.once('SIGINT', () => {
+    shutdown('SIGINT').then(() => {
+      process.exit();
+    });
+  });
+
+  process.once('SIGTERM', () => {
+    shutdown('SIGTERM').then(() => {
+      process.exit();
+    });
+  });
+}
+
+module.exports = {
+  app,
+  startServer,
+  shutdown,
+  createIndexes,
+  classifyFragment,
+  splitIntoFragments
+};
+

@@ -1,33 +1,64 @@
+'use strict';
 
-const { MongoClient } = require("mongodb");
+const { MongoClient } = require('mongodb');
 
-const uri = process.env.MONGODB_URI;
+let client = null;
+let connectionPromise = null;
 
-if (!uri) {
-  throw new Error("Falta MONGODB_URI en el archivo .env");
+function getMongoClient() {
+  const uri = process.env.MONGODB_URI;
+
+  if (!uri) {
+    throw new Error('Falta MONGODB_URI en el archivo .env');
+  }
+
+  if (!client) {
+    client = new MongoClient(uri);
+  }
+
+  return client;
 }
 
-const client = new MongoClient(uri);
-let connectionPromise;
-
 async function connectDB() {
+  const mongoClient = getMongoClient();
+
   if (!connectionPromise) {
-    connectionPromise = client.connect().catch((error) => {
+    connectionPromise = mongoClient.connect().catch((error) => {
       connectionPromise = null;
+      client = null;
       throw error;
     });
   }
 
   await connectionPromise;
-  return client.db("nexora");
+
+  return mongoClient.db('nexora');
 }
 
 function getDB() {
   if (!connectionPromise) {
-    throw new Error("MongoDB todavía no se ha conectado");
+    throw new Error('MongoDB todavía no se ha conectado');
   }
 
-  return client.db("nexora");
+  return getMongoClient().db('nexora');
 }
 
-module.exports = { connectDB, getDB };
+async function closeDB() {
+  if (!client) return;
+
+  try {
+    if (connectionPromise) {
+      await connectionPromise;
+    }
+  } finally {
+    await client.close();
+    client = null;
+    connectionPromise = null;
+  }
+}
+
+module.exports = {
+  connectDB,
+  getDB,
+  closeDB
+};
