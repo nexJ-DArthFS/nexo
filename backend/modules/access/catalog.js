@@ -96,6 +96,20 @@ const PERMISSIONS = [
     description: 'Consultar registros de auditoría.'
   },
 
+  // CONFIGURACIÓN CFG-05
+  {
+    key: 'settings.read',
+    name: 'Consultar configuración',
+    module: 'configuration',
+    description: 'Consultar los parámetros generales del sistema.'
+  },
+  {
+    key: 'settings.update',
+    name: 'Modificar configuración',
+    module: 'configuration',
+    description: 'Modificar los parámetros generales del sistema.'
+  },
+
   // NOTAS
   {
     key: 'notes.create',
@@ -175,7 +189,8 @@ const ROLE_PERMISSIONS = {
     'users.update',
     'users.manage_status',
     'access.read',
-    'audit.read'
+    'audit.read',
+    'settings.read'
   ],
 
   // Gestión de módulos asignados.

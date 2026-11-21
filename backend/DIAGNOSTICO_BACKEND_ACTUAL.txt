@@ -1,676 +1,857 @@
-﻿DIAGNOSTICO ACTUAL DE NEXORA BACKEND
-Fecha: 2026-11-20 19:02:21
+﻿========== NEXORA | DIAGNOSTICO BACKEND ==========
 
+[1] ESTRUCTURA DEL BACKEND
+.env
+DIAGNOSTICO_BACKEND_ACTUAL.txt
+package-lock.json
+package.json
+server.js
+test-db.js
+config\db.js
+middleware\requireAuth.js
+middleware\requirePermission.js
+modules\access\access-management.service.js
+modules\access\access.routes.js
+modules\access\access.service.js
+modules\access\catalog.js
+modules\access\seed.js
+modules\audit\audit.repository.js
+modules\audit\audit.service.js
+modules\users\users.controller.js
+modules\users\users.repository.js
+modules\users\users.routes.js
+modules\users\users.service.js
+routes\auth.js
+scripts\bootstrap-superadmin.js
+scripts\seed-access-catalog.js
 
-==================================================
-ARCHIVO: server.js
-==================================================
-
-'use strict';
-
-require('dotenv').config();
-
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const session = require('express-session');
-const MongoStore = require('connect-mongo').default;
-
-const {
-  connectDB,
-  getDB,
-  closeDB
-} = require('./config/db');
-
-const usersRoutes = require('./modules/users/users.routes');
-const accessRoutes = require('./modules/access/access.routes');
-// ======================================================
-// 1. CONFIGURACIÃ“N
-// ======================================================
-
-const app = express();
-
-const PORT = Number(process.env.PORT) || 3001;
-const HOST = process.env.HOST || '127.0.0.1';
-
-const isProduction = process.env.NODE_ENV === 'production';
-
-if (!process.env.MONGODB_URI) {
-  throw new Error('Falta MONGODB_URI en el archivo .env');
-}
-
-if (!process.env.SESSION_SECRET) {
-  throw new Error('Falta SESSION_SECRET en el archivo .env');
-}
-
-if (process.env.SESSION_SECRET.length < 32) {
-  throw new Error('SESSION_SECRET debe tener al menos 32 caracteres.');
-}
-
-if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
-  throw new Error('El puerto configurado no es vÃ¡lido.');
-}
-
-// ======================================================
-// 2. MIDDLEWARES
-// ======================================================
-
-if (isProduction) {
-  app.set('trust proxy', 1);
-}
-
-app.disable('x-powered-by');
-
-
-app.use(helmet());
-
-const allowedOrigins = (
-  process.env.CORS_ORIGINS ||
-  'http://localhost:5173,http://127.0.0.1:5173'
-)
-  .split(',')
-  .map(origin => origin.trim())
-  .filter(Boolean);
-
-app.use(cors({
-  origin(origin, callback) {
-    // Permite solicitudes sin Origin, como algunas herramientas
-    // locales y procesos internos.
-    if (!origin || allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    return callback(new Error('Origen no autorizado por CORS.'));
+[2] PACKAGE.JSON
+{
+  "name": "nexora-backend",
+  "version": "1.0.0",
+  "description": "API de anÃ¡lisis de notas de NEXORA",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
   },
-  credentials: true
-}));
-
-app.use(express.json({
-  limit: '100kb'
-}));
-
-// ======================================================
-// 3. SESIONES
-// ======================================================
-
-const sessionStore = MongoStore.create({
-  mongoUrl: process.env.MONGODB_URI,
-  dbName: 'nexora',
-  collectionName: 'sessions',
-  autoRemove: 'native'
-});
-
-app.use(session({
-  name: 'nexora.sid',
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  rolling: true,
-  store: sessionStore,
-  cookie: {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: 'lax',
-    maxAge: 1000 * 60 * 60 * 24 * 7,
-    path: '/'
-  }
-}));
-
-// ======================================================
-// 4. RUTAS DE AUTENTICACIÃ“N Y USUARIOS
-// ======================================================
-
-app.use('/api/auth', require('./routes/auth'));
-
-app.use('/api/users', usersRoutes);
-
-app.use('/api/access', accessRoutes);
-
-// ======================================================
-// 5. CLASIFICADOR DE NOTAS
-// ======================================================
-
-const MAX_NOTE_LENGTH = 20000;
-
-const rules = [
-  {
-    category: 'tasks',
-    label: 'Tarea',
-    patterns: [
-      /\b(tengo que|debo|necesito|hay que|pendiente|por hacer|hacer|terminar|entregar|enviar|revisar|estudiar|preparar|llamar|comprar|investigar)\b/i
-    ]
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "connect-mongo": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^18.0.9",
+    "express": "^5.1.0",
+    "express-session": "^1.19.0",
+    "helmet": "^8.1.0",
+    "mongodb": "^7.7.0"
   },
-  {
-    category: 'objectives',
-    label: 'Objetivo',
-    patterns: [
-      /\b(mi objetivo|objetivo|meta|quiero lograr|quiero alcanzar|me propongo|aspiraciÃ³n|aspirar a)\b/i
-    ]
-  },
-  {
-    category: 'questions',
-    label: 'Pregunta',
-    patterns: [
-      /[Â¿?]/,
-      /\b(me pregunto|no sÃ© si|cÃ³mo puedo|por quÃ©|quÃ© pasarÃ­a|averiguar si)\b/i
-    ]
-  },
-  {
-    category: 'decisions',
-    label: 'DecisiÃ³n',
-    patterns: [
-      /\b(decidÃ­|he decidido|decisiÃ³n|elegÃ­|elegir|optarÃ©|voy a escoger|acordamos|acuerdo)\b/i
-    ]
-  },
-  {
-    category: 'concerns',
-    label: 'PreocupaciÃ³n',
-    patterns: [
-      /\b(me preocupa|preocupado|preocupada|estresado|estresada|agobiado|agobiada|me cuesta|tengo miedo|me siento|agotado|agotada|confundido|confundida)\b/i
-    ]
-  },
-  {
-    category: 'ideas',
-    label: 'Idea',
-    patterns: [
-      /\b(idea|se me ocurre|podrÃ­a|podemos|serÃ­a interesante|propongo|imagino|crear|diseÃ±ar|inventar)\b/i
-    ]
-  },
-  {
-    category: 'knowledge',
-    label: 'Conocimiento',
-    patterns: [
-      /\b(aprendÃ­|descubrÃ­|entendÃ­|comprendÃ­|principio|concepto|teorema|definiciÃ³n|significa|consiste en|observÃ©)\b/i
-    ]
-  }
-];
-
-// ======================================================
-// 6. FUNCIONES DE CLASIFICACIÃ“N
-// ======================================================
-
-function classifyFragment(text) {
-  for (const rule of rules) {
-    if (rule.patterns.some(pattern => pattern.test(text))) {
-      return {
-        category: rule.category,
-        label: rule.label
-      };
-    }
-  }
-
-  return {
-    category: 'review',
-    label: 'Por revisar'
-  };
-}
-
-function splitIntoFragments(text) {
-  return text
-    .replace(/\r\n/g, '\n')
-    .split(/\n+|(?<=[.!?])\s+/)
-    .map(fragment => fragment.trim())
-    .filter(Boolean);
-}
-
-// ======================================================
-// 7. ESTADO DEL SERVIDOR
-// ======================================================
-
-app.get('/api/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'NEXORA API'
-  });
-});
-
-// ======================================================
-// 8. ANÃLISIS DE NOTAS
-// ======================================================
-
-app.post('/api/notes/analyze', (req, res) => {
-  const text = req.body?.text;
-
-  if (typeof text !== 'string') {
-    return res.status(400).json({
-      error: 'El campo text debe ser una cadena de texto.'
-    });
-  }
-
-  const normalizedText = text.trim();
-
-  if (!normalizedText) {
-    return res.status(400).json({
-      error: 'Escribe una nota antes de analizarla.'
-    });
-  }
-
-  if (normalizedText.length > MAX_NOTE_LENGTH) {
-    return res.status(413).json({
-      error: `La nota supera el lÃ­mite de ${MAX_NOTE_LENGTH} caracteres.`
-    });
-  }
-
-  const fragments = splitIntoFragments(normalizedText);
-
-  const items = fragments.map((fragment, index) => {
-    const classification = classifyFragment(fragment);
-
-    return {
-      id: index + 1,
-      text: fragment,
-      category: classification.category,
-      label: classification.label
-    };
-  });
-
-  const grouped = {
-    tasks: [],
-    objectives: [],
-    questions: [],
-    decisions: [],
-    concerns: [],
-    ideas: [],
-    knowledge: [],
-    review: []
-  };
-
-  for (const item of items) {
-    grouped[item.category].push(item);
-  }
-
-  return res.json({
-    success: true,
-    totalFragments: items.length,
-    items,
-    grouped,
-    notice:
-      'ClasificaciÃ³n orientativa: revisa los resultados y corrige las categorÃ­as que no representen tu intenciÃ³n.',
-    privacy:
-      'Esta API no guarda las notas en una base de datos. El texto se procesa en memoria durante la solicitud.'
-  });
-});
-
-// ======================================================
-// 9. MANEJADOR GLOBAL DE ERRORES
-// ======================================================
-
-app.use((error, _req, res, _next) => {
-  if (res.headersSent) {
-    return;
-  }
-
-  if (error instanceof SyntaxError && 'body' in error) {
-    return res.status(400).json({
-      error: 'El cuerpo de la solicitud contiene JSON invÃ¡lido.'
-    });
-  }
-
-  if (error.message === 'Origen no autorizado por CORS.') {
-    return res.status(403).json({
-      error: 'Origen no autorizado.'
-    });
-  }
-
-  console.error('ERROR EN NEXORA:', error);
-
-  return res.status(error.status || 500).json({
-    error: error.status
-      ? error.message
-      : 'OcurriÃ³ un error interno al procesar la solicitud.'
-  });
-});
-
-// ======================================================
-// 10. ÃNDICES DE BASE DE DATOS
-// ======================================================
-
-async function createIndexes(db) {
-  // Usuarios.
-  await db.collection('users').createIndex(
-    { email: 1 },
-    {
-      unique: true,
-      name: 'email_1'
-    }
-  );
-
-  // CatÃ¡logo RBAC.
-  await db.collection('roles').createIndex(
-    { key: 1 },
-    {
-      unique: true,
-      name: 'key_1'
-    }
-  );
-
-  await db.collection('permissions').createIndex(
-    { key: 1 },
-    {
-      unique: true,
-      name: 'key_1'
-    }
-  );
-
-  // Permisos asociados a roles.
-  await db.collection('role_permissions').createIndex(
-    { roleId: 1, permissionId: 1 },
-    {
-      unique: true,
-      name: 'role_permission_unique'
-    }
-  );
-
-  // Asignaciones de roles.
-  await db.collection('role_assignments').createIndex(
-    { userId: 1, roleId: 1 },
-    {
-      name: 'user_role_assignment_lookup'
-    }
-  );
-
-  await db.collection('role_assignments').createIndex(
-    { roleId: 1, active: 1, expiresAt: 1 },
-    {
-      name: 'active_role_assignments_lookup'
-    }
-  );
-
-  // AuditorÃ­a.
-  await db.collection('audit_logs').createIndex(
-    { actorId: 1, createdAt: -1 },
-    {
-      name: 'audit_actor_created'
-    }
-  );
-
-  await db.collection('audit_logs').createIndex(
-    {
-      'target.type': 1,
-      'target.id': 1,
-      createdAt: -1
-    },
-    {
-      name: 'audit_target_created'
-    }
-  );
-}
-
-// ======================================================
-// 11. INICIALIZACIÃ“N
-// ======================================================
-
-let httpServer = null;
-let shuttingDown = false;
-
-async function startServer() {
-  await connectDB();
-
-  const db = getDB();
-
-  await createIndexes(db);
-
-  return new Promise((resolve, reject) => {
-    const server = app.listen(PORT, HOST);
-
-    server.once('error', reject);
-
-    server.once('listening', () => {
-      httpServer = server;
-
-      console.log('------------------------------------');
-      console.log('NEXORA BACKEND INICIADO');
-      console.log(`Servidor: http://${HOST}:${PORT}`);
-      console.log(`Estado: http://${HOST}:${PORT}/api/health`);
-      console.log('AutenticaciÃ³n: /api/auth');
-      console.log('Usuarios: /api/users');
-      console.log('AnÃ¡lisis: /api/notes/analyze');
-      console.log('------------------------------------');
-
-      resolve(server);
-    });
-  });
-}
-
-// ======================================================
-// 12. CIERRE ORDENADO
-// ======================================================
-
-async function shutdown(signal = 'shutdown') {
-  if (shuttingDown) {
-    return;
-  }
-
-  shuttingDown = true;
-
-  console.log(`\nCerrando NEXORA (${signal})...`);
-
-  try {
-    if (httpServer) {
-      await new Promise((resolve, reject) => {
-        httpServer.close(error => {
-          if (error) {
-            return reject(error);
-          }
-
-          resolve();
-        });
-      });
-    }
-
-    await sessionStore.close();
-    await closeDB();
-
-    console.log('NEXORA se cerrÃ³ correctamente.');
-  } catch (error) {
-    console.error('Error durante el cierre:', error.message);
-    process.exitCode = 1;
+  "engines": {
+    "node": ">=18"
   }
 }
 
-// ======================================================
-// 13. EJECUCIÃ“N
-// ======================================================
+[3] RUTAS, MODULOS Y CONTROLADORES
 
-if (require.main === module) {
-  startServer().catch(async error => {
-    console.error('No se pudo iniciar NEXORA:', error.message);
+--- C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\access\access-management.service.js ---
 
-    try {
-      await sessionStore.close();
-      await closeDB();
-    } catch (closeError) {
-      console.error('Error al cerrar conexiones:', closeError.message);
-    }
-
-    process.exitCode = 1;
-  });
-
-  process.once('SIGINT', () => {
-    shutdown('SIGINT').then(() => {
-      process.exit();
-    });
-  });
-
-  process.once('SIGTERM', () => {
-    shutdown('SIGTERM').then(() => {
-      process.exit();
-    });
-  });
-}
-
-module.exports = {
-  app,
-  startServer,
-  shutdown,
-  createIndexes,
-  classifyFragment,
-  splitIntoFragments
-};
-
-
-
-
-==================================================
-ARCHIVO: config\db.js
-==================================================
-'use strict';
-
-const { MongoClient } = require('mongodb');
-
-let client = null;
-let connectionPromise = null;
-
-function getMongoClient() {
-  const uri = process.env.MONGODB_URI;
-
-  if (!uri) {
-    throw new Error('Falta MONGODB_URI en el archivo .env');
-  }
-
-  if (!client) {
-    client = new MongoClient(uri);
-  }
-
-  return client;
-}
-
-async function connectDB() {
-  const mongoClient = getMongoClient();
-
-  if (!connectionPromise) {
-    connectionPromise = mongoClient.connect().catch((error) => {
-      connectionPromise = null;
-      client = null;
-      throw error;
-    });
-  }
-
-  await connectionPromise;
-
-  return mongoClient.db('nexora');
-}
-
-function getDB() {
-  if (!connectionPromise) {
-    throw new Error('MongoDB todavÃ­a no se ha conectado');
-  }
-
-  return getMongoClient().db('nexora');
-}
-
-async function closeDB() {
-  if (!client) return;
-
-  try {
-    if (connectionPromise) {
-      await connectionPromise;
-    }
-  } finally {
-    await client.close();
-    client = null;
-    connectionPromise = null;
-  }
-}
-
-module.exports = {
-  connectDB,
-  getDB,
-  closeDB
-};
-
-
-==================================================
-ARCHIVO: middleware\requireAuth.js
-==================================================
 'use strict';
 
 const { ObjectId } = require('mongodb');
-const { getDB } = require('../config/db');
 
-async function requireAuth(req, res, next) {
-  try {
-    const userId = req.session?.user?.id;
-
-    // 1. Comprobar que exista una sesiÃ³n.
-    if (!userId || !ObjectId.isValid(userId)) {
-      return res.status(401).json({
-        success: false,
-        error: 'AutenticaciÃ³n requerida.'
-      });
-    }
-
-    // 2. Consultar el usuario en MongoDB.
-    const db = getDB();
-
-    const user = await db.collection('users').findOne(
-      { _id: new ObjectId(userId) },
-      {
-        projection: {
-          name: 1,
-          email: 1,
-          status: 1
-        }
-      }
-    );
-
-    // 3. Comprobar que exista y estÃ© activo.
-    if (!user || user.status !== 'active') {
-      return req.session.destroy((error) => {
-        res.clearCookie('nexora.sid', {
-          path: '/'
-        });
-
-        if (error) {
-          return next(error);
-        }
-
-        return res.status(401).json({
-          success: false,
-          error: 'La sesiÃ³n no es vÃ¡lida o la cuenta no estÃ¡ activa.'
-        });
-      });
-    }
-
-    // 4. Actualizar la informaciÃ³n autenticada.
-    req.authUser = {
-      id: user._id.toString(),
-      name: user.name,
-      email: user.email,
-      status: user.status
-    };
-
-    req.session.user = {
-      id: user._id.toString(),
-      name: user.name,
-      email: user.email
-    };
-
-    return next();
-
-  } catch (error) {
-    return next(error);
-  }
-}
-
-module.exports = requireAuth;
-
-
-==================================================
-ARCHIVO: middleware\requirePermission.js
-==================================================
-'use strict';
+const { createAuditService } = require('../audit/audit.service');
 
 const {
-  requirePermission
-} = require('../modules/access/access.service');
+  isAssignmentActive,
+  isValidScope,
+  isRoleScopeAllowed
+} = require('./access.service');
 
-module.exports = requirePermission;
+function createAccessManagementService(db) {
+  if (!db || typeof db.collection !== 'function') {
+    throw new Error('Se requiere una conexiÃ³n vÃ¡lida a MongoDB.');
+  }
+
+  const assignments = db.collection('role_assignments');
+  const users = db.collection('users');
+  const roles = db.collection('roles');
+  const audit = createAuditService(db);
+
+  function createError(message, status = 400) {
+    const error = new Error(message);
+    error.status = status;
+    return error;
+  }
+
+  function parseObjectId(value, label) {
+    if (
+      typeof value !== 'string' ||
+      !ObjectId.isValid(value) ||
+      value.length !== 24
+    ) {
+      throw createError(`${label} invÃ¡lido.`);
+    }
+
+    return new ObjectId(value);
+  }
+
+  function normalizeScope(scope) {
+    if (!isValidScope(scope)) {
+      throw createError('El alcance proporcionado no es vÃ¡lido.');
+    }
+
+    if (scope.type === 'global') {
+      return {
+        type: 'global',
+        module: null,
+        resourceType: null,
+        resourceId: null
+      };
+    }
+
+    if (scope.type === 'module') {
+      return {
+        type: 'module',
+        module: scope.module.trim(),
+        resourceType: null,
+        resourceId: null
+      };
+    }
+
+    return {
+      type: 'resource',
+      module: null,
+      resourceType: scope.resourceType.trim(),
+      resourceId: String(scope.resourceId).trim()
+    };
+  }
+
+  function parseExpiration(value) {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+
+    const expiration = new Date(value);
+
+    if (Number.isNaN(expiration.getTime())) {
+      throw createError('La fecha de expiraciÃ³n no es vÃ¡lida.');
+    }
+
+    if (expiration <= new Date()) {
+      throw createError('La fecha de expiraciÃ³n debe ser futura.');
+    }
+
+    return expiration;
+  }
+
+  async function withTransaction(callback) {
+    const session = db.client.startSession();
+
+    try {
+      let result;
+
+      await session.withTransaction(async () => {
+        result = await callback(session);
+      });
+
+      return result;
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  async function getActiveUser(userId, session) {
+    const user = await users.findOne(
+      { _id: userId },
+      { session }
+    );
+
+    if (!user) {
+      throw createError('Usuario no encontrado.', 404);
+    }
+
+    if (user.status !== 'active') {
+      throw createError(
+        'No se pueden asignar roles a una cuenta que no estÃ¡ activa.',
+        409
+      );
+    }
+
+    return user;
+  }
+
+  async function getActiveRole(roleId, session) {
+    const role = await roles.findOne(
+      {
+        _id: roleId,
+        active: { $ne: false }
+      },
+      { session }
+    );
+
+    if (!role) {
+      throw createError('El rol no existe o estÃ¡ inactivo.', 404);
+    }
+
+    return role;
+  }
+
+  async function getAssignment(assignmentId, session) {
+    const assignment = await assignments.findOne(
+      { _id: assignmentId },
+      { session }
+    );
+
+    if (!assignment) {
+      throw createError('AsignaciÃ³n no encontrada.', 404);
+    }
+
+    return assignment;
+  }
+
+  async function protectSuperAdmin(role, assignment, session) {
+    if (role.key !== 'super_admin') {
+      return;
+    }
+
+    const now = new Date();
+
+    if (!isAssignmentActive(assignment, now)) {
+      return;
+    }
+
+    // Serializa las operaciones concurrentes sobre este rol.
+    await roles.updateOne(
+      { _id: role._id },
+      {
+        $inc: { securityVersion: 1 },
+        $set: { securityUpdatedAt: now }
+      },
+      { session }
+    );
+
+    const result = await assignments.aggregate([
+      {
+        $match: {
+          roleId: role._id,
+          active: true,
+          $or: [
+            { expiresAt: null },
+            { expiresAt: { $exists: false } },
+            { expiresAt: { $gt: now } }
+          ]
+        }
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'user'
+        }
+      },
+      { $unwind: '$user' },
+      {
+        $match: {
+          'user.status': 'active'
+        }
+      },
+      {
+        $group: {
+          _id: '$userId'
+        }
+      },
+      {
+        $count: 'total'
+      }
+    ], { session }).toArray();
+
+    if ((result[0]?.total || 0) <= 1) {
+      throw createError(
+        'No puedes retirar o desactivar al Ãºltimo superadministrador activo.',
+        403
+      );
+    }
+  }
+
+  async function assignRole(data, actorId, request = {}) {
+    const userId = parseObjectId(data?.userId, 'ID de usuario');
+    const roleId = parseObjectId(data?.roleId, 'ID de rol');
+    const actorObjectId = parseObjectId(actorId, 'ID del actor');
+
+    const scope = normalizeScope(data?.scope);
+    const expiresAt = parseExpiration(data?.expiresAt);
+
+    return withTransaction(async (session) => {
+      const user = await getActiveUser(userId, session);
+      const role = await getActiveRole(roleId, session);
+
+      if (!isRoleScopeAllowed(role.key, scope)) {
+        throw createError(
+          'El alcance seleccionado no estÃ¡ permitido para este rol.'
+        );
+      }
+
+      const now = new Date();
+
+      const existing = await assignments.findOne(
+        {
+          userId,
+          roleId,
+          active: true,
+          $or: [
+            { expiresAt: null },
+            { expiresAt: { $exists: false } },
+            { expiresAt: { $gt: now } }
+          ]
+        },
+        { session }
+      );
+
+      if (existing) {
+        throw createError(
+          'El usuario ya tiene una asignaciÃ³n activa de este rol.',
+          409
+        );
+      }
+
+      const assignment = {
+        userId,
+        roleId,
+        scope,
+        active: true,
+        expiresAt,
+        assignedAt: now,
+        assignedBy: actorObjectId,
+        createdAt: now,
+        updatedAt: now
+      };
+
+      const result = await assignments.insertOne(
+        assignment,
+        { session }
+      );
+
+      const createdAssignment = {
+        ...assignment,
+        _id: result.insertedId
+      };
+
+      await audit.record({
+        actorId: actorObjectId,
+        action: 'access.role_assigned',
+        target: {
+          type: 'role_assignment',
+          id: result.insertedId
+        },
+        details: {
+          userId,
+          roleId,
+          roleKey: role.key,
+          scope,
+          expiresAt
+        },
+        ip: request.ip || null,
+        userAgent: request.get?.('user-agent') || null
+      }, { session });
+
+      return {
+        assignment: createdAssignment,
+        user: {
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email
+        },
+        role: {
+          id: role._id.toString(),
+          key: role.key,
+          name: role.name
+        }
+      };
+    });
+  }
+
+  async function updateAssignment(
+    assignmentId,
+    changes,
+    actorId,
+    request = {}
+  ) {
+    const id = parseObjectId(
+      assignmentId,
+      'ID de asignaciÃ³n'
+    );
+
+    const actorObjectId = parseObjectId(actorId, 'ID del actor');
+
+    const allowedFields = ['scope', 'expiresAt'];
+
+    if (
+      !changes ||
+      typeof changes !== 'object' ||
+      Array.isArray(changes) ||
+      !Object.keys(changes).some(key => allowedFields.includes(key)) ||
+      Object.keys(changes).some(key => !allowedFields.includes(key))
+    ) {
+      throw createError(
+        'Solo puedes modificar el alcance o la fecha de expiraciÃ³n.'
+      );
+    }
+
+    return withTransaction(async (session) => {
+      const assignment = await getAssignment(id, session);
+
+      if (!isAssignmentActive(assignment)) {
+        throw createError(
+          'No puedes modificar una asignaciÃ³n inactiva o vencida.',
+          409
+        );
+      }
+
+      const role = await getActiveRole(assignment.roleId, session);
+      const updatedFields = {};
+      const previousValues = {};
+
+      if (Object.prototype.hasOwnProperty.call(changes, 'scope')) {
+        const scope = normalizeScope(changes.scope);
+
+        if (!isRoleScopeAllowed(role.key, scope)) {
+          throw createError(
+            'El alcance seleccionado no estÃ¡ permitido para este rol.'
+          );
+        }
+
+        previousValues.scope = assignment.scope;
+        updatedFields.scope = scope;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(changes, 'expiresAt')) {
+        const expiresAt = parseExpiration(changes.expiresAt);
+
+        previousValues.expiresAt = assignment.expiresAt ?? null;
+        updatedFields.expiresAt = expiresAt;
+      }
+
+      const now = new Date();
+
+      await assignments.updateOne(
+        { _id: id, active: true },
+        {
+          $set: {
+            ...updatedFields,
+            updatedAt: now,
+            updatedBy: actorObjectId
+          }
+        },
+        { session }
+      );
+
+      await audit.record({
+        actorId: actorObjectId,
+        action: 'access.role_assignment_updated',
+        target: {
+          type: 'role_assignment',
+          id
+        },
+        details: {
+          roleKey: role.key,
+          previousValues,
+          newValues: updatedFields
+        },
+        ip: request.ip || null,
+        userAgent: request.get?.('user-agent') || null
+      }, { session });
+
+      return assignments.findOne(
+        { _id: id },
+        { session }
+      );
+    });
+  }
+
+  async function revokeAssignment(
+    assignmentId,
+    actorId,
+    request = {}
+  ) {
+    const id = parseObjectId(
+      assignmentId,
+      'ID de asignaciÃ³n'
+    );
+
+    const actorObjectId = parseObjectId(actorId, 'ID del actor');
+
+    return withTransaction(async (session) => {
+      const assignment = await getAssignment(id, session);
+
+      if (!isAssignmentActive(assignment)) {
+        throw createError(
+          'La asignaciÃ³n ya estÃ¡ inactiva o vencida.',
+          409
+        );
+      }
+
+      const role = await getActiveRole(assignment.roleId, session);
+
+      await protectSuperAdmin(role, assignment, session);
+
+      const now = new Date();
+
+      await assignments.updateOne(
+        {
+          _id: id,
+          active: true
+        },
+        {
+          $set: {
+            active: false,
+            revokedAt: now,
+            revokedBy: actorObjectId,
+            updatedAt: now
+          }
+        },
+        { session }
+      );
+
+      await audit.record({
+        actorId: actorObjectId,
+        action: 'access.role_assignment_revoked',
+        target: {
+          type: 'role_assignment',
+          id
+        },
+        details: {
+          userId: assignment.userId,
+          roleId: assignment.roleId,
+          roleKey: role.key,
+          previousScope: assignment.scope
+        },
+        ip: request.ip || null,
+        userAgent: request.get?.('user-agent') || null
+      }, { session });
+
+      return assignments.findOne(
+        { _id: id },
+        { session }
+      );
+    });
+  }
+
+  return {
+    assignRole,
+    updateAssignment,
+    revokeAssignment
+  };
+}
+
+module.exports = {
+  createAccessManagementService
+};
+
+--- C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\access\access.routes.js ---
+'use strict';
+const {
+  createAccessManagementService
+} = require('./access-management.service');
+
+const express = require('express');
+const { ObjectId } = require('mongodb');
+
+const { getDB } = require('../../config/db');
+const requireAuth = require('../../middleware/requireAuth');
+
+const {
+  requirePermission,
+  isAssignmentActive,
+  isRoleScopeAllowed
+} = require('./access.service');
+
+const router = express.Router();
+function getManagementService() {
+  return createAccessManagementService(getDB());
+}
+router.use(requireAuth);
+
+const accessScope = () => ({
+  module: 'access'
+});
+
+// ==========================================
+// CONSULTAR CATÃLOGO DE ROLES Y PERMISOS
+// GET /api/access/catalog
+// ==========================================
+
+router.get(
+  '/catalog',
+  requirePermission('access.read', accessScope),
+  async (req, res, next) => {
+    try {
+      const db = getDB();
+
+      const [roles, permissions, relations] = await Promise.all([
+        db.collection('roles')
+          .find({})
+          .sort({ key: 1 })
+          .toArray(),
+
+        db.collection('permissions')
+          .find({})
+          .sort({ module: 1, key: 1 })
+          .toArray(),
+
+        db.collection('role_permissions')
+          .find({})
+          .toArray()
+      ]);
+
+      const rolePermissions = relations.map(relation => ({
+        roleId: relation.roleId.toString(),
+        permissionId: relation.permissionId.toString()
+      }));
+
+      return res.json({
+        success: true,
+        roles,
+        permissions,
+        rolePermissions
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ==========================================
+// CONSULTAR ASIGNACIONES DE UN USUARIO
+// GET /api/access/users/:id/assignments
+// ==========================================
+
+router.get(
+  '/users/:id/assignments',
+  requirePermission('access.read', accessScope),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+
+      if (!ObjectId.isValid(id) || id.length !== 24) {
+        return res.status(400).json({
+          success: false,
+          error: 'Identificador de usuario invÃ¡lido.'
+        });
+      }
+
+      const db = getDB();
+      const userId = new ObjectId(id);
+
+      const user = await db.collection('users').findOne(
+        { _id: userId },
+        {
+          projection: {
+            passwordHash: 0
+          }
+        }
+      );
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          error: 'Usuario no encontrado.'
+        });
+      }
+
+      const assignments = await db.collection('role_assignments')
+        .find({ userId })
+        .sort({ assignedAt: -1, createdAt: -1 })
+        .toArray();
+
+      const roleIds = [
+        ...new Map(
+          assignments
+            .filter(item => item.roleId instanceof ObjectId)
+            .map(item => [
+              item.roleId.toString(),
+              item.roleId
+            ])
+        ).values()
+      ];
+
+      const roles = roleIds.length
+        ? await db.collection('roles')
+            .find({ _id: { $in: roleIds } })
+            .toArray()
+        : [];
+
+      const roleMap = new Map(
+        roles.map(role => [
+          role._id.toString(),
+          role
+        ])
+      );
+
+      const now = new Date();
+
+      const result = assignments.map(assignment => {
+        const role = roleMap.get(
+          assignment.roleId?.toString()
+        );
+
+        const assignmentActive = isAssignmentActive(
+          assignment,
+          now
+        );
+
+        const scopeAllowed = role
+          ? isRoleScopeAllowed(
+              role.key,
+              assignment.scope
+            )
+          : false;
+
+        const effective =
+          user.status === 'active' &&
+          assignmentActive &&
+          Boolean(role) &&
+          role.active !== false &&
+          scopeAllowed;
+
+        return {
+          ...assignment,
+
+          id: assignment._id.toString(),
+
+          role: role
+            ? {
+                id: role._id.toString(),
+                key: role.key,
+                name: role.name,
+                protected: role.protected,
+                active: role.active !== false
+              }
+            : null,
+
+          assignedAt:
+            assignment.assignedAt ||
+            assignment.createdAt ||
+            null,
+
+          expired:
+            assignment.expiresAt != null &&
+            new Date(assignment.expiresAt) <= now,
+
+          scopeAllowed,
+          effective
+        };
+      });
+
+      return res.json({
+        success: true,
+
+        user: {
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email,
+          status: user.status
+        },
+
+        assignments: result
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 
-==================================================
-ARCHIVO: modules\access\access.service.js
-==================================================
+// ==========================================
+// ACL-04: ASIGNAR UN ROL
+// POST /api/access/assignments
+// ==========================================
+
+router.post(
+  '/assignments',
+  requirePermission('access.manage_roles', accessScope),
+  async (req, res, next) => {
+    try {
+      const result = await getManagementService().assignRole(
+        req.body,
+        req.authUser.id,
+        req
+      );
+
+      return res.status(201).json({
+        success: true,
+        message: 'Rol asignado correctamente.',
+        ...result
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// ==========================================
+// ACL-04: MODIFICAR UNA ASIGNACIÃ“N
+// PATCH /api/access/assignments/:assignmentId
+// ==========================================
+
+router.patch(
+  '/assignments/:assignmentId',
+  requirePermission('access.manage_roles', accessScope),
+  async (req, res, next) => {
+    try {
+      const assignment = await getManagementService().updateAssignment(
+        req.params.assignmentId,
+        req.body,
+        req.authUser.id,
+        req
+      );
+
+      return res.json({
+        success: true,
+        message: 'AsignaciÃ³n actualizada correctamente.',
+        assignment
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// ==========================================
+// ACL-04: REVOCAR UNA ASIGNACIÃ“N
+// DELETE /api/access/assignments/:assignmentId
+// ==========================================
+
+router.delete(
+  '/assignments/:assignmentId',
+  requirePermission('access.manage_roles', accessScope),
+  async (req, res, next) => {
+    try {
+      const assignment = await getManagementService().revokeAssignment(
+        req.params.assignmentId,
+        req.authUser.id,
+        req
+      );
+
+      return res.json({
+        success: true,
+        message: 'AsignaciÃ³n revocada correctamente.',
+        assignment
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+module.exports = router;
+
+--- C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\access\access.service.js ---
 
 'use strict';
 
@@ -1180,228 +1361,7 @@ module.exports = {
   scopeAllows
 };
 
-
-
-==================================================
-ARCHIVO: modules\access\access.routes.js
-==================================================
-
-'use strict';
-
-const express = require('express');
-const { ObjectId } = require('mongodb');
-
-const { getDB } = require('../../config/db');
-const requireAuth = require('../../middleware/requireAuth');
-
-const {
-  requirePermission,
-  isAssignmentActive,
-  isRoleScopeAllowed
-} = require('./access.service');
-
-const router = express.Router();
-
-router.use(requireAuth);
-
-const accessScope = () => ({
-  module: 'access'
-});
-
-// ==========================================
-// CONSULTAR CATÃLOGO DE ROLES Y PERMISOS
-// GET /api/access/catalog
-// ==========================================
-
-router.get(
-  '/catalog',
-  requirePermission('access.read', accessScope),
-  async (req, res, next) => {
-    try {
-      const db = getDB();
-
-      const [roles, permissions, relations] = await Promise.all([
-        db.collection('roles')
-          .find({})
-          .sort({ key: 1 })
-          .toArray(),
-
-        db.collection('permissions')
-          .find({})
-          .sort({ module: 1, key: 1 })
-          .toArray(),
-
-        db.collection('role_permissions')
-          .find({})
-          .toArray()
-      ]);
-
-      const rolePermissions = relations.map(relation => ({
-        roleId: relation.roleId.toString(),
-        permissionId: relation.permissionId.toString()
-      }));
-
-      return res.json({
-        success: true,
-        roles,
-        permissions,
-        rolePermissions
-      });
-
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// ==========================================
-// CONSULTAR ASIGNACIONES DE UN USUARIO
-// GET /api/access/users/:id/assignments
-// ==========================================
-
-router.get(
-  '/users/:id/assignments',
-  requirePermission('access.read', accessScope),
-  async (req, res, next) => {
-    try {
-      const { id } = req.params;
-
-      if (!ObjectId.isValid(id) || id.length !== 24) {
-        return res.status(400).json({
-          success: false,
-          error: 'Identificador de usuario invÃ¡lido.'
-        });
-      }
-
-      const db = getDB();
-      const userId = new ObjectId(id);
-
-      const user = await db.collection('users').findOne(
-        { _id: userId },
-        {
-          projection: {
-            passwordHash: 0
-          }
-        }
-      );
-
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          error: 'Usuario no encontrado.'
-        });
-      }
-
-      const assignments = await db.collection('role_assignments')
-        .find({ userId })
-        .sort({ assignedAt: -1, createdAt: -1 })
-        .toArray();
-
-      const roleIds = [
-        ...new Map(
-          assignments
-            .filter(item => item.roleId instanceof ObjectId)
-            .map(item => [
-              item.roleId.toString(),
-              item.roleId
-            ])
-        ).values()
-      ];
-
-      const roles = roleIds.length
-        ? await db.collection('roles')
-            .find({ _id: { $in: roleIds } })
-            .toArray()
-        : [];
-
-      const roleMap = new Map(
-        roles.map(role => [
-          role._id.toString(),
-          role
-        ])
-      );
-
-      const now = new Date();
-
-      const result = assignments.map(assignment => {
-        const role = roleMap.get(
-          assignment.roleId?.toString()
-        );
-
-        const assignmentActive = isAssignmentActive(
-          assignment,
-          now
-        );
-
-        const scopeAllowed = role
-          ? isRoleScopeAllowed(
-              role.key,
-              assignment.scope
-            )
-          : false;
-
-        const effective =
-          user.status === 'active' &&
-          assignmentActive &&
-          Boolean(role) &&
-          role.active !== false &&
-          scopeAllowed;
-
-        return {
-          ...assignment,
-
-          id: assignment._id.toString(),
-
-          role: role
-            ? {
-                id: role._id.toString(),
-                key: role.key,
-                name: role.name,
-                protected: role.protected,
-                active: role.active !== false
-              }
-            : null,
-
-          assignedAt:
-            assignment.assignedAt ||
-            assignment.createdAt ||
-            null,
-
-          expired:
-            assignment.expiresAt != null &&
-            new Date(assignment.expiresAt) <= now,
-
-          scopeAllowed,
-          effective
-        };
-      });
-
-      return res.json({
-        success: true,
-
-        user: {
-          id: user._id.toString(),
-          name: user.name,
-          email: user.email,
-          status: user.status
-        },
-
-        assignments: result
-      });
-
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-module.exports = router;
-
-
-
-==================================================
-ARCHIVO: modules\access\catalog.js
-==================================================
+--- C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\access\catalog.js ---
 
 'use strict';
 
@@ -1623,11 +1583,7 @@ module.exports = {
   ROLE_PERMISSIONS
 };
 
-
-
-==================================================
-ARCHIVO: modules\access\seed.js
-==================================================
+--- C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\access\seed.js ---
 
 'use strict';
 
@@ -1976,11 +1932,7 @@ module.exports = {
   validateCatalog
 };
 
-
-
-==================================================
-ARCHIVO: modules\audit\audit.repository.js
-==================================================
+--- C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\audit\audit.repository.js ---
 
 'use strict';
 
@@ -2118,11 +2070,7 @@ module.exports = {
   createAuditRepository
 };
 
-
-
-==================================================
-ARCHIVO: modules\audit\audit.service.js
-==================================================
+--- C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\audit\audit.service.js ---
 
 'use strict';
 
@@ -2210,11 +2158,106 @@ module.exports = {
   createAuditService
 };
 
+--- C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\users\users.controller.js ---
 
+'use strict';
 
-==================================================
-ARCHIVO: modules\users\users.repository.js
-==================================================
+const { createUsersService } = require('./users.service');
+const { getDB } = require('../../config/db');
+
+function createUsersController() {
+  // Crear el servicio cuando se procesa una solicitud.
+  function getService() {
+    return createUsersService(getDB());
+  }
+
+  // Gestionar errores.
+  function handleError(error, res, next) {
+    if (error.status) {
+      return res.status(error.status).json({
+        error: error.message
+      });
+    }
+
+    return next(error);
+  }
+
+  // LISTAR USUARIOS
+  async function list(req, res, next) {
+    try {
+      const result = await getService().list({
+        skip: req.query.skip,
+        limit: req.query.limit,
+        status: req.query.status
+      });
+
+      return res.json(result);
+    } catch (error) {
+      return handleError(error, res, next);
+    }
+  }
+
+  // CONSULTAR USUARIO
+  async function getById(req, res, next) {
+    try {
+      const user = await getService().getById(req.params.id);
+
+      return res.json({ user });
+    } catch (error) {
+      return handleError(error, res, next);
+    }
+  }
+
+  // ACTUALIZAR PERFIL
+  async function updateProfile(req, res, next) {
+    try {
+      const user = await getService().updateProfile(
+        req.params.id,
+        req.body || {},
+        req.authUser.id
+      );
+
+      return res.json({
+        success: true,
+        user
+      });
+    } catch (error) {
+      return handleError(error, res, next);
+    }
+  }
+
+  // ACTUALIZAR ESTADO
+  async function updateStatus(req, res, next) {
+    try {
+      const user = await getService().updateStatus(
+        req.params.id,
+        req.body?.status,
+        req.authUser.id,
+        req
+      );
+
+      return res.json({
+        success: true,
+        user
+      });
+    } catch (error) {
+      return handleError(error, res, next);
+    }
+  }
+
+  return {
+    list,
+    getById,
+    updateProfile,
+    updateStatus
+  };
+}
+
+module.exports = {
+  createUsersController
+};
+
+--- C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\users\users.repository.js ---
 
 'use strict';
 
@@ -2323,11 +2366,65 @@ module.exports = {
   createUsersRepository
 };
 
+--- C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\users\users.routes.js ---
+'use strict';
 
+const express = require('express');
 
-==================================================
-ARCHIVO: modules\users\users.service.js
-==================================================
+const requireAuth = require('../../middleware/requireAuth');
+
+const {
+  requirePermission
+} = require('../access/access.service');
+
+const {
+  createUsersController
+} = require('./users.controller');
+
+const router = express.Router();
+
+const controller = createUsersController();
+
+const usersScope = () => ({
+  module: 'users'
+});
+
+// Primera capa: comprobar autenticaciÃ³n y estado de la cuenta.
+router.use(requireAuth);
+
+// Segunda capa: comprobar permisos RBAC.
+
+// Consultar todos los usuarios.
+router.get(
+  '/',
+  requirePermission('users.read', usersScope),
+  controller.list
+);
+
+// Consultar un usuario.
+router.get(
+  '/:id',
+  requirePermission('users.read', usersScope),
+  controller.getById
+);
+
+// Actualizar informaciÃ³n de un usuario.
+router.patch(
+  '/:id',
+  requirePermission('users.update', usersScope),
+  controller.updateProfile
+);
+
+// Cambiar estado de una cuenta.
+router.patch(
+  '/:id/status',
+  requirePermission('users.manage_status', usersScope),
+  controller.updateStatus
+);
+
+module.exports = router;
+
+--- C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\users\users.service.js ---
 
 'use strict';
 
@@ -2670,267 +2767,720 @@ module.exports = {
   createUsersService
 };
 
-
-
-==================================================
-ARCHIVO: modules\users\users.controller.js
-==================================================
+--- C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\routes\auth.js ---
 
 'use strict';
 
-const { createUsersService } = require('./users.service');
-const { getDB } = require('../../config/db');
+const express = require('express');
+const bcrypt = require('bcryptjs');
+const { ObjectId } = require('mongodb');
 
-function createUsersController() {
-  // Crear el servicio cuando se procesa una solicitud.
-  function getService() {
-    return createUsersService(getDB());
-  }
+const { getDB } = require('../config/db');
+const {
+  getEffectivePermissions
+} = require('../modules/access/access.service');
 
-  // Gestionar errores.
-  function handleError(error, res, next) {
-    if (error.status) {
-      return res.status(error.status).json({
-        error: error.message
+const router = express.Router();
+
+// ======================================================
+// 1. FUNCIONES AUXILIARES
+// ======================================================
+
+function publicUser(user) {
+  return {
+    id: user._id.toString(),
+    name: user.name,
+    email: user.email
+  };
+}
+
+function regenerateSession(req, user) {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate(error => {
+      if (error) return reject(error);
+
+      req.session.user = publicUser(user);
+
+      req.session.save(saveError => {
+        if (saveError) return reject(saveError);
+        resolve();
+      });
+    });
+  });
+}
+
+function destroySession(req, res, callback) {
+  req.session.destroy(error => {
+    res.clearCookie('nexora.sid', {
+      path: '/'
+    });
+
+    callback(error);
+  });
+}
+
+// ======================================================
+// 2. REGISTRO
+// ======================================================
+
+router.post('/register', async (req, res, next) => {
+  try {
+    const name = typeof req.body?.name === 'string'
+      ? req.body.name.trim()
+      : '';
+
+    const email = typeof req.body?.email === 'string'
+      ? req.body.email.trim().toLowerCase()
+      : '';
+
+    const password = typeof req.body?.password === 'string'
+      ? req.body.password
+      : '';
+
+    if (name.length < 2 || name.length > 80) {
+      return res.status(400).json({
+        error: 'El nombre debe tener entre 2 y 80 caracteres.'
+      });
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({
+        error: 'Correo electrÃ³nico invÃ¡lido.'
+      });
+    }
+
+    if (
+      password.length < 8 ||
+      Buffer.byteLength(password, 'utf8') > 72
+    ) {
+      return res.status(400).json({
+        error: 'La contraseÃ±a debe tener al menos 8 caracteres y no superar 72 bytes.'
+      });
+    }
+
+    const db = getDB();
+
+    const users = db.collection('users');
+    const roles = db.collection('roles');
+    const assignments = db.collection('role_assignments');
+    const auditLogs = db.collection('audit_logs');
+
+    const existing = await users.findOne(
+      { email },
+      { projection: { _id: 1 } }
+    );
+
+    if (existing) {
+      return res.status(409).json({
+        error: 'Este correo ya estÃ¡ registrado.'
+      });
+    }
+
+    const userRole = await roles.findOne({
+      key: 'user',
+      active: { $ne: false }
+    });
+
+    if (!userRole) {
+      return res.status(503).json({
+        error: 'El sistema de acceso todavÃ­a no estÃ¡ inicializado.'
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const session = db.client.startSession();
+
+    let createdUser;
+
+    try {
+      await session.withTransaction(async () => {
+        const now = new Date();
+
+        const currentUser = await users.findOne(
+          { email },
+          {
+            projection: { _id: 1 },
+            session
+          }
+        );
+
+        if (currentUser) {
+          const error = new Error(
+            'Este correo ya estÃ¡ registrado.'
+          );
+          error.status = 409;
+          throw error;
+        }
+
+        const userResult = await users.insertOne(
+          {
+            name,
+            email,
+            passwordHash,
+            status: 'active',
+            createdAt: now,
+            updatedAt: now
+          },
+          { session }
+        );
+
+        const userId = userResult.insertedId;
+
+        createdUser = {
+          _id: userId,
+          name,
+          email
+        };
+
+        await assignments.insertOne(
+          {
+            userId,
+            roleId: userRole._id,
+            scope: {
+              type: 'global',
+              module: null,
+              resourceType: null,
+              resourceId: null
+            },
+            assignedBy: userId,
+            assignedAt: now,
+            expiresAt: null,
+            active: true,
+            source: 'registration'
+          },
+          { session }
+        );
+
+        await auditLogs.insertOne(
+          {
+            actorId: userId,
+            action: 'auth.register',
+            target: {
+              type: 'user',
+              id: userId
+            },
+            details: {
+              roleKey: 'user'
+            },
+            result: 'success',
+            createdAt: now
+          },
+          { session }
+        );
+      });
+    } finally {
+      await session.endSession();
+    }
+
+    await regenerateSession(req, createdUser);
+
+    return res.status(201).json({
+      success: true,
+      user: publicUser(createdUser)
+    });
+
+  } catch (error) {
+    if (error.code === 11000 || error.status === 409) {
+      return res.status(409).json({
+        error: 'Este correo ya estÃ¡ registrado.'
       });
     }
 
     return next(error);
   }
-
-  // LISTAR USUARIOS
-  async function list(req, res, next) {
-    try {
-      const result = await getService().list({
-        skip: req.query.skip,
-        limit: req.query.limit,
-        status: req.query.status
-      });
-
-      return res.json(result);
-    } catch (error) {
-      return handleError(error, res, next);
-    }
-  }
-
-  // CONSULTAR USUARIO
-  async function getById(req, res, next) {
-    try {
-      const user = await getService().getById(req.params.id);
-
-      return res.json({ user });
-    } catch (error) {
-      return handleError(error, res, next);
-    }
-  }
-
-  // ACTUALIZAR PERFIL
-  async function updateProfile(req, res, next) {
-    try {
-      const user = await getService().updateProfile(
-        req.params.id,
-        req.body || {},
-        req.authUser.id
-      );
-
-      return res.json({
-        success: true,
-        user
-      });
-    } catch (error) {
-      return handleError(error, res, next);
-    }
-  }
-
-  // ACTUALIZAR ESTADO
-  async function updateStatus(req, res, next) {
-    try {
-      const user = await getService().updateStatus(
-        req.params.id,
-        req.body?.status,
-        req.authUser.id,
-        req
-      );
-
-      return res.json({
-        success: true,
-        user
-      });
-    } catch (error) {
-      return handleError(error, res, next);
-    }
-  }
-
-  return {
-    list,
-    getById,
-    updateProfile,
-    updateStatus
-  };
-}
-
-module.exports = {
-  createUsersController
-};
-
-
-
-==================================================
-ARCHIVO: modules\users\users.routes.js
-==================================================
-'use strict';
-
-const express = require('express');
-
-const requireAuth = require('../../middleware/requireAuth');
-
-const {
-  requirePermission
-} = require('../access/access.service');
-
-const {
-  createUsersController
-} = require('./users.controller');
-
-const router = express.Router();
-
-const controller = createUsersController();
-
-const usersScope = () => ({
-  module: 'users'
 });
 
-// Primera capa: comprobar autenticaciÃ³n y estado de la cuenta.
-router.use(requireAuth);
+// ======================================================
+// 3. INICIO DE SESIÃ“N
+// ======================================================
 
-// Segunda capa: comprobar permisos RBAC.
+router.post('/login', async (req, res, next) => {
+  try {
+    const email = typeof req.body?.email === 'string'
+      ? req.body.email.trim().toLowerCase()
+      : '';
 
-// Consultar todos los usuarios.
-router.get(
-  '/',
-  requirePermission('users.read', usersScope),
-  controller.list
-);
+    const password = typeof req.body?.password === 'string'
+      ? req.body.password
+      : '';
 
-// Consultar un usuario.
-router.get(
-  '/:id',
-  requirePermission('users.read', usersScope),
-  controller.getById
-);
+    if (!email || !password) {
+      return res.status(400).json({
+        error: 'Introduce tu correo y contraseÃ±a.'
+      });
+    }
 
-// Actualizar informaciÃ³n de un usuario.
-router.patch(
-  '/:id',
-  requirePermission('users.update', usersScope),
-  controller.updateProfile
-);
+    const user = await getDB()
+      .collection('users')
+      .findOne({ email });
 
-// Cambiar estado de una cuenta.
-router.patch(
-  '/:id/status',
-  requirePermission('users.manage_status', usersScope),
-  controller.updateStatus
-);
+    if (
+      !user ||
+      !user.passwordHash ||
+      !(await bcrypt.compare(password, user.passwordHash))
+    ) {
+      return res.status(401).json({
+        error: 'Correo o contraseÃ±a incorrectos.'
+      });
+    }
+
+    if (user.status !== 'active') {
+      const messages = {
+        pending: 'Tu cuenta estÃ¡ pendiente de activaciÃ³n.',
+        suspended: 'Tu cuenta estÃ¡ suspendida.',
+        disabled: 'Tu cuenta estÃ¡ deshabilitada.'
+      };
+
+      return res.status(403).json({
+        error: messages[user.status] || 'Tu cuenta no estÃ¡ habilitada.'
+      });
+    }
+
+    await regenerateSession(req, user);
+
+    return res.json({
+      success: true,
+      user: publicUser(user)
+    });
+
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// ======================================================
+// 4. CONSULTAR SESIÃ“N Y PERMISOS
+// ======================================================
+
+router.get('/me', async (req, res, next) => {
+  try {
+    const userId = req.session?.user?.id;
+
+    if (!userId || !ObjectId.isValid(userId)) {
+      return res.status(401).json({
+        authenticated: false
+      });
+    }
+
+    const db = getDB();
+
+    const user = await db.collection('users').findOne(
+      { _id: new ObjectId(userId) },
+      {
+        projection: {
+          name: 1,
+          email: 1,
+          status: 1
+        }
+      }
+    );
+
+    if (!user || user.status !== 'active') {
+      return destroySession(req, res, error => {
+        if (error) return next(error);
+
+        return res.status(401).json({
+          authenticated: false
+        });
+      });
+    }
+
+    const permissions = await getEffectivePermissions(
+      db,
+      user._id
+    );
+
+    req.session.user = publicUser(user);
+
+    return res.json({
+      authenticated: true,
+      user: req.session.user,
+      permissions
+    });
+
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// ======================================================
+// 5. CERRAR SESIÃ“N
+// ======================================================
+
+router.post('/logout', (req, res, next) => {
+  destroySession(req, res, error => {
+    if (error) return next(error);
+
+    return res.json({
+      success: true
+    });
+  });
+});
 
 module.exports = router;
 
+[4] MODELOS, SERVICIOS Y BASE DE DATOS
 
-==================================================
-ARCHIVO: scripts\bootstrap-superadmin.js
-==================================================
+[5] ARCHIVOS PRINCIPALES
+
+--- .\server.js ---
 
 'use strict';
 
 require('dotenv').config();
 
-const bcrypt = require('bcryptjs');
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const session = require('express-session');
+const MongoStore = require('connect-mongo').default;
 
 const {
   connectDB,
   getDB,
   closeDB
-} = require('../config/db');
+} = require('./config/db');
 
-const {
-  seedAccessCatalog
-} = require('../modules/access/seed');
-
+const usersRoutes = require('./modules/users/users.routes');
+const accessRoutes = require('./modules/access/access.routes');
 // ======================================================
-// VALIDACIÃ“N DE CREDENCIALES
+// 1. CONFIGURACIÃ“N
 // ======================================================
 
-function validateCredentials() {
-  const name = process.env.BOOTSTRAP_ADMIN_NAME?.trim();
+const app = express();
 
-  const email = process.env.BOOTSTRAP_ADMIN_EMAIL
-    ?.trim()
-    .toLowerCase();
+const PORT = Number(process.env.PORT) || 3001;
+const HOST = process.env.HOST || '127.0.0.1';
 
-  const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+const isProduction = process.env.NODE_ENV === 'production';
 
-  if (!name || name.length < 2 || name.length > 80) {
-    throw new Error(
-      'Define BOOTSTRAP_ADMIN_NAME (entre 2 y 80 caracteres).'
-    );
-  }
+if (!process.env.MONGODB_URI) {
+  throw new Error('Falta MONGODB_URI en el archivo .env');
+}
 
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new Error(
-      'Define un BOOTSTRAP_ADMIN_EMAIL vÃ¡lido.'
-    );
-  }
+if (!process.env.SESSION_SECRET) {
+  throw new Error('Falta SESSION_SECRET en el archivo .env');
+}
 
-  if (
-    !password ||
-    password.length < 12 ||
-    Buffer.byteLength(password, 'utf8') > 72
-  ) {
-    throw new Error(
-      'BOOTSTRAP_ADMIN_PASSWORD debe tener al menos 12 caracteres y no superar 72 bytes.'
-    );
-  }
+if (process.env.SESSION_SECRET.length < 32) {
+  throw new Error('SESSION_SECRET debe tener al menos 32 caracteres.');
+}
 
-  return { name, email, password };
+if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+  throw new Error('El puerto configurado no es vÃ¡lido.');
 }
 
 // ======================================================
-// ÃNDICES
+// 2. MIDDLEWARES
 // ======================================================
 
-async function createBootstrapIndexes(db) {
-  // Evitar roles duplicados.
+if (isProduction) {
+  app.set('trust proxy', 1);
+}
 
-  await db.collection('roles').createIndex(
-    { key: 1 },
+app.disable('x-powered-by');
+
+
+app.use(helmet());
+
+const allowedOrigins = (
+  process.env.CORS_ORIGINS ||
+  'http://localhost:5173,http://127.0.0.1:5173'
+)
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin(origin, callback) {
+    // Permite solicitudes sin Origin, como algunas herramientas
+    // locales y procesos internos.
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Origen no autorizado por CORS.'));
+  },
+  credentials: true
+}));
+
+app.use(express.json({
+  limit: '100kb'
+}));
+
+// ======================================================
+// 3. SESIONES
+// ======================================================
+
+const sessionStore = MongoStore.create({
+  mongoUrl: process.env.MONGODB_URI,
+  dbName: 'nexora',
+  collectionName: 'sessions',
+  autoRemove: 'native'
+});
+
+app.use(session({
+  name: 'nexora.sid',
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  rolling: true,
+  store: sessionStore,
+  cookie: {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax',
+    maxAge: 1000 * 60 * 60 * 24 * 7,
+    path: '/'
+  }
+}));
+
+// ======================================================
+// 4. RUTAS DE AUTENTICACIÃ“N Y USUARIOS
+// ======================================================
+
+app.use('/api/auth', require('./routes/auth'));
+
+app.use('/api/users', usersRoutes);
+
+app.use('/api/access', accessRoutes);
+
+// ======================================================
+// 5. CLASIFICADOR DE NOTAS
+// ======================================================
+
+const MAX_NOTE_LENGTH = 20000;
+
+const rules = [
+  {
+    category: 'tasks',
+    label: 'Tarea',
+    patterns: [
+      /\b(tengo que|debo|necesito|hay que|pendiente|por hacer|hacer|terminar|entregar|enviar|revisar|estudiar|preparar|llamar|comprar|investigar)\b/i
+    ]
+  },
+  {
+    category: 'objectives',
+    label: 'Objetivo',
+    patterns: [
+      /\b(mi objetivo|objetivo|meta|quiero lograr|quiero alcanzar|me propongo|aspiraciÃ³n|aspirar a)\b/i
+    ]
+  },
+  {
+    category: 'questions',
+    label: 'Pregunta',
+    patterns: [
+      /[Â¿?]/,
+      /\b(me pregunto|no sÃ© si|cÃ³mo puedo|por quÃ©|quÃ© pasarÃ­a|averiguar si)\b/i
+    ]
+  },
+  {
+    category: 'decisions',
+    label: 'DecisiÃ³n',
+    patterns: [
+      /\b(decidÃ­|he decidido|decisiÃ³n|elegÃ­|elegir|optarÃ©|voy a escoger|acordamos|acuerdo)\b/i
+    ]
+  },
+  {
+    category: 'concerns',
+    label: 'PreocupaciÃ³n',
+    patterns: [
+      /\b(me preocupa|preocupado|preocupada|estresado|estresada|agobiado|agobiada|me cuesta|tengo miedo|me siento|agotado|agotada|confundido|confundida)\b/i
+    ]
+  },
+  {
+    category: 'ideas',
+    label: 'Idea',
+    patterns: [
+      /\b(idea|se me ocurre|podrÃ­a|podemos|serÃ­a interesante|propongo|imagino|crear|diseÃ±ar|inventar)\b/i
+    ]
+  },
+  {
+    category: 'knowledge',
+    label: 'Conocimiento',
+    patterns: [
+      /\b(aprendÃ­|descubrÃ­|entendÃ­|comprendÃ­|principio|concepto|teorema|definiciÃ³n|significa|consiste en|observÃ©)\b/i
+    ]
+  }
+];
+
+// ======================================================
+// 6. FUNCIONES DE CLASIFICACIÃ“N
+// ======================================================
+
+function classifyFragment(text) {
+  for (const rule of rules) {
+    if (rule.patterns.some(pattern => pattern.test(text))) {
+      return {
+        category: rule.category,
+        label: rule.label
+      };
+    }
+  }
+
+  return {
+    category: 'review',
+    label: 'Por revisar'
+  };
+}
+
+function splitIntoFragments(text) {
+  return text
+    .replace(/\r\n/g, '\n')
+    .split(/\n+|(?<=[.!?])\s+/)
+    .map(fragment => fragment.trim())
+    .filter(Boolean);
+}
+
+// ======================================================
+// 7. ESTADO DEL SERVIDOR
+// ======================================================
+
+app.get('/api/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'NEXORA API'
+  });
+});
+
+// ======================================================
+// 8. ANÃLISIS DE NOTAS
+// ======================================================
+
+app.post('/api/notes/analyze', (req, res) => {
+  const text = req.body?.text;
+
+  if (typeof text !== 'string') {
+    return res.status(400).json({
+      error: 'El campo text debe ser una cadena de texto.'
+    });
+  }
+
+  const normalizedText = text.trim();
+
+  if (!normalizedText) {
+    return res.status(400).json({
+      error: 'Escribe una nota antes de analizarla.'
+    });
+  }
+
+  if (normalizedText.length > MAX_NOTE_LENGTH) {
+    return res.status(413).json({
+      error: `La nota supera el lÃ­mite de ${MAX_NOTE_LENGTH} caracteres.`
+    });
+  }
+
+  const fragments = splitIntoFragments(normalizedText);
+
+  const items = fragments.map((fragment, index) => {
+    const classification = classifyFragment(fragment);
+
+    return {
+      id: index + 1,
+      text: fragment,
+      category: classification.category,
+      label: classification.label
+    };
+  });
+
+  const grouped = {
+    tasks: [],
+    objectives: [],
+    questions: [],
+    decisions: [],
+    concerns: [],
+    ideas: [],
+    knowledge: [],
+    review: []
+  };
+
+  for (const item of items) {
+    grouped[item.category].push(item);
+  }
+
+  return res.json({
+    success: true,
+    totalFragments: items.length,
+    items,
+    grouped,
+    notice:
+      'ClasificaciÃ³n orientativa: revisa los resultados y corrige las categorÃ­as que no representen tu intenciÃ³n.',
+    privacy:
+      'Esta API no guarda las notas en una base de datos. El texto se procesa en memoria durante la solicitud.'
+  });
+});
+
+// ======================================================
+// 9. MANEJADOR GLOBAL DE ERRORES
+// ======================================================
+
+app.use((error, _req, res, _next) => {
+  if (res.headersSent) {
+    return;
+  }
+
+  if (error instanceof SyntaxError && 'body' in error) {
+    return res.status(400).json({
+      error: 'El cuerpo de la solicitud contiene JSON invÃ¡lido.'
+    });
+  }
+
+  if (error.message === 'Origen no autorizado por CORS.') {
+    return res.status(403).json({
+      error: 'Origen no autorizado.'
+    });
+  }
+
+  console.error('ERROR EN NEXORA:', error);
+
+  return res.status(error.status || 500).json({
+    error: error.status
+      ? error.message
+      : 'OcurriÃ³ un error interno al procesar la solicitud.'
+  });
+});
+
+// ======================================================
+// 10. ÃNDICES DE BASE DE DATOS
+// ======================================================
+
+async function createIndexes(db) {
+  // Usuarios.
+  await db.collection('users').createIndex(
+    { email: 1 },
     {
-      name: 'key_1',
-      unique: true
+      unique: true,
+      name: 'email_1'
     }
   );
 
-  // Evitar permisos duplicados.
+  // CatÃ¡logo RBAC.
+  await db.collection('roles').createIndex(
+    { key: 1 },
+    {
+      unique: true,
+      name: 'key_1'
+    }
+  );
 
   await db.collection('permissions').createIndex(
     { key: 1 },
     {
-      name: 'key_1',
-      unique: true
+      unique: true,
+      name: 'key_1'
     }
   );
 
-  // Evitar relaciones duplicadas entre roles y permisos.
-
+  // Permisos asociados a roles.
   await db.collection('role_permissions').createIndex(
     { roleId: 1, permissionId: 1 },
     {
-      name: 'role_permission_unique',
-      unique: true
+      unique: true,
+      name: 'role_permission_unique'
     }
   );
 
-  // Facilitar consultas de asignaciones de usuarios.
-
+  // Asignaciones de roles.
   await db.collection('role_assignments').createIndex(
     { userId: 1, roleId: 1 },
     {
@@ -2944,301 +3494,142 @@ async function createBootstrapIndexes(db) {
       name: 'active_role_assignments_lookup'
     }
   );
+
+  // AuditorÃ­a.
+  await db.collection('audit_logs').createIndex(
+    { actorId: 1, createdAt: -1 },
+    {
+      name: 'audit_actor_created'
+    }
+  );
+
+  await db.collection('audit_logs').createIndex(
+    {
+      'target.type': 1,
+      'target.id': 1,
+      createdAt: -1
+    },
+    {
+      name: 'audit_target_created'
+    }
+  );
 }
 
 // ======================================================
-// INICIALIZACIÃ“N DEL SUPERADMINISTRADOR
+// 11. INICIALIZACIÃ“N
 // ======================================================
 
-async function main() {
-  let session;
-  let connected = false;
+let httpServer = null;
+let shuttingDown = false;
+
+async function startServer() {
+  await connectDB();
+
+  const db = getDB();
+
+  await createIndexes(db);
+
+  return new Promise((resolve, reject) => {
+    const server = app.listen(PORT, HOST);
+
+    server.once('error', reject);
+
+    server.once('listening', () => {
+      httpServer = server;
+
+      console.log('------------------------------------');
+      console.log('NEXORA BACKEND INICIADO');
+      console.log(`Servidor: http://${HOST}:${PORT}`);
+      console.log(`Estado: http://${HOST}:${PORT}/api/health`);
+      console.log('AutenticaciÃ³n: /api/auth');
+      console.log('Usuarios: /api/users');
+      console.log('AnÃ¡lisis: /api/notes/analyze');
+      console.log('------------------------------------');
+
+      resolve(server);
+    });
+  });
+}
+
+// ======================================================
+// 12. CIERRE ORDENADO
+// ======================================================
+
+async function shutdown(signal = 'shutdown') {
+  if (shuttingDown) {
+    return;
+  }
+
+  shuttingDown = true;
+
+  console.log(`\nCerrando NEXORA (${signal})...`);
 
   try {
-    const { name, email, password } = validateCredentials();
+    if (httpServer) {
+      await new Promise((resolve, reject) => {
+        httpServer.close(error => {
+          if (error) {
+            return reject(error);
+          }
 
-    await connectDB();
-    connected = true;
-
-    const db = getDB();
-
-    // Crear Ã­ndices antes de sincronizar el catÃ¡logo.
-    await createBootstrapIndexes(db);
-
-    // Sincronizar roles, permisos y relaciones.
-    await seedAccessCatalog(db);
-
-    const users = db.collection('users');
-    const roles = db.collection('roles');
-    const assignments = db.collection('role_assignments');
-    const auditLogs = db.collection('audit_logs');
-
-    const role = await roles.findOne({
-      key: 'super_admin',
-      active: { $ne: false }
-    });
-
-    if (!role) {
-      throw new Error(
-        'No se encontrÃ³ un rol super_admin activo.'
-      );
+          resolve();
+        });
+      });
     }
 
-    // Preparar el hash antes de iniciar la transacciÃ³n.
-    const passwordHash = await bcrypt.hash(password, 12);
+    await sessionStore.close();
+    await closeDB();
 
-    session = db.client.startSession();
-
-    let createdUserId;
-
-    await session.withTransaction(async () => {
-      const now = new Date();
-
-      // Bloqueo lÃ³gico para serializar bootstraps concurrentes.
-      const roleLock = await roles.updateOne(
-        { _id: role._id },
-        {
-          $inc: { bootstrapVersion: 1 },
-          $set: { bootstrapUpdatedAt: now }
-        },
-        { session }
-      );
-
-      if (roleLock.matchedCount !== 1) {
-        throw new Error(
-          'No se pudo asegurar el rol super_admin.'
-        );
-      }
-
-      // Comprobar si ya existe una asignaciÃ³n vigente.
-      const existingSuperAdmin = await assignments.findOne(
-        {
-          roleId: role._id,
-          active: true,
-          $or: [
-            { expiresAt: null },
-            { expiresAt: { $exists: false } },
-            { expiresAt: { $gt: now } }
-          ]
-        },
-        { session }
-      );
-
-      if (existingSuperAdmin) {
-        throw new Error(
-          'Ya existe un superadministrador activo. Bootstrap cancelado.'
-        );
-      }
-
-      // No promover cuentas existentes.
-      const existingUser = await users.findOne(
-        { email },
-        {
-          projection: { _id: 1 },
-          session
-        }
-      );
-
-      if (existingUser) {
-        throw new Error(
-          'El correo ya pertenece a una cuenta. No se promoverÃ¡ automÃ¡ticamente.'
-        );
-      }
-
-      // Crear usuario.
-      const userResult = await users.insertOne(
-        {
-          name,
-          email,
-          passwordHash,
-          status: 'active',
-          createdAt: now,
-          updatedAt: now
-        },
-        { session }
-      );
-
-      createdUserId = userResult.insertedId;
-
-      // Asignar super_admin global.
-      await assignments.insertOne(
-        {
-          userId: createdUserId,
-          roleId: role._id,
-          scope: {
-            type: 'global',
-            module: null,
-            resourceType: null,
-            resourceId: null
-          },
-          assignedBy: createdUserId,
-          assignedAt: now,
-          expiresAt: null,
-          active: true,
-          source: 'bootstrap'
-        },
-        { session }
-      );
-
-      // Registrar auditorÃ­a dentro de la transacciÃ³n.
-      await auditLogs.insertOne(
-        {
-          actorId: createdUserId,
-          action: 'bootstrap.super_admin.created',
-          target: {
-            type: 'user',
-            id: createdUserId
-          },
-          details: {
-            roleKey: 'super_admin',
-            scopeType: 'global'
-          },
-          result: 'success',
-          createdAt: now
-        },
-        { session }
-      );
-    });
-
-    process.stdout.write(
-      '\nSuperadministrador creado correctamente.\n' +
-      `Correo: ${email}\n` +
-      'Alcance: global\n' +
-      'La contraseÃ±a no se muestra ni se registra.\n\n'
-    );
-
-  } finally {
-    if (session) {
-      await session.endSession();
-    }
-
-    if (connected) {
-      await closeDB();
-    }
+    console.log('NEXORA se cerrÃ³ correctamente.');
+  } catch (error) {
+    console.error('Error durante el cierre:', error.message);
+    process.exitCode = 1;
   }
 }
 
 // ======================================================
-// EJECUCIÃ“N
+// 13. EJECUCIÃ“N
 // ======================================================
 
 if (require.main === module) {
-  main().catch(error => {
-    process.stderr.write(
-      `Bootstrap cancelado: ${error.message}\n`
-    );
+  startServer().catch(async error => {
+    console.error('No se pudo iniciar NEXORA:', error.message);
+
+    try {
+      await sessionStore.close();
+      await closeDB();
+    } catch (closeError) {
+      console.error('Error al cerrar conexiones:', closeError.message);
+    }
 
     process.exitCode = 1;
+  });
+
+  process.once('SIGINT', () => {
+    shutdown('SIGINT').then(() => {
+      process.exit();
+    });
+  });
+
+  process.once('SIGTERM', () => {
+    shutdown('SIGTERM').then(() => {
+      process.exit();
+    });
   });
 }
 
 module.exports = {
-  main,
-  validateCredentials,
-  createBootstrapIndexes
+  app,
+  startServer,
+  shutdown,
+  createIndexes,
+  classifyFragment,
+  splitIntoFragments
 };
 
 
+[6] ESTADO DE GIT
+ D ../DIAGNOSTICO-FRONTEND.txt
+ M DIAGNOSTICO_BACKEND_ACTUAL.txt
 
-==================================================
-ARCHIVO: scripts\seed-access-catalog.js
-==================================================
-'use strict';
-
-require('dotenv').config();
-
-const {
-  connectDB,
-  getDB,
-  closeDB
-} = require('../config/db');
-
-const {
-  seedAccessCatalog
-} = require('../modules/access/seed');
-
-async function main() {
-  try {
-    await connectDB();
-
-    const db = getDB();
-
-    const result = await seedAccessCatalog(db);
-
-    console.log('\nCatÃ¡logo NEXORA inicializado correctamente.');
-    console.log(`Roles: ${result.roles}`);
-    console.log(`Permisos: ${result.permissions}`);
-
-  } finally {
-    await closeDB();
-  }
-}
-
-main().catch((error) => {
-  console.error('Error:', error.message);
-  process.exitCode = 1;
-});
-
-
-==================================================
-ARCHIVO: package.json
-==================================================
-{
-  "name": "nexora-backend",
-  "version": "1.0.0",
-  "description": "API de anÃ¡lisis de notas de NEXORA",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "dependencies": {
-    "bcryptjs": "^3.0.3",
-    "connect-mongo": "^6.0.0",
-    "cors": "^2.8.5",
-    "dotenv": "^18.0.9",
-    "express": "^5.1.0",
-    "express-session": "^1.19.0",
-    "helmet": "^8.1.0",
-    "mongodb": "^7.7.0"
-  },
-  "engines": {
-    "node": ">=18"
-  }
-}
-
-
-
-========== ESTRUCTURA DE MODULOS ==========
-C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\access\access.routes.js
-C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\access\access.service.js
-C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\access\catalog.js
-C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\access\seed.js
-C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\audit\audit.repository.js
-C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\audit\audit.service.js
-C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\users\users.controller.js
-C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\users\users.repository.js
-C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\users\users.routes.js
-C:\Users\juanf\OneDrive\Desktop\NEXORA\backend\modules\users\users.service.js
-
-
-========== ESTADO GIT ==========
- M config/db.js
- M routes/auth.js
- M server.js
- M ../frontend/src/App.jsx
- M ../frontend/src/Auth.jsx
- M ../frontend/src/AuthContext.jsx
-?? ../DIAGNOSTICO-FRONTEND.txt
-?? DIAGNOSTICO_BACKEND_ACTUAL.txt
-?? middleware/
-?? modules/
-?? scripts/
-?? ../frontend/src/Admin.css
-?? ../frontend/src/AdminDashboard.jsx
-?? ../frontend/src/AdminRoute.jsx
-?? ../frontend/src/admin/
+========== FIN DEL DIAGNOSTICO ==========

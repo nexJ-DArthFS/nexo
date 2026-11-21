@@ -9,14 +9,19 @@ const helmet = require('helmet');
 const session = require('express-session');
 const MongoStore = require('connect-mongo').default;
 
+const auditRoutes = require('./modules/audit/audit.routes');
+const configurationRoutes = require('./modules/configuration/configuration.routes');
+
 const {
   connectDB,
   getDB,
   closeDB
 } = require('./config/db');
 
+const modulesRoutes = require('./modules/modules.routes');
 const usersRoutes = require('./modules/users/users.routes');
 const accessRoutes = require('./modules/access/access.routes');
+
 // ======================================================
 // 1. CONFIGURACIÓN
 // ======================================================
@@ -25,7 +30,6 @@ const app = express();
 
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || '127.0.0.1';
-
 const isProduction = process.env.NODE_ENV === 'production';
 
 if (!process.env.MONGODB_URI) {
@@ -53,8 +57,6 @@ if (isProduction) {
 }
 
 app.disable('x-powered-by');
-
-
 app.use(helmet());
 
 const allowedOrigins = (
@@ -67,8 +69,6 @@ const allowedOrigins = (
 
 app.use(cors({
   origin(origin, callback) {
-    // Permite solicitudes sin Origin, como algunas herramientas
-    // locales y procesos internos.
     if (!origin || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
@@ -110,14 +110,15 @@ app.use(session({
 }));
 
 // ======================================================
-// 4. RUTAS DE AUTENTICACIÓN Y USUARIOS
+// 4. RUTAS
 // ======================================================
 
 app.use('/api/auth', require('./routes/auth'));
-
 app.use('/api/users', usersRoutes);
-
 app.use('/api/access', accessRoutes);
+app.use('/api/modules', modulesRoutes);
+app.use('/api/audit', auditRoutes);
+app.use('/api/configuration', configurationRoutes);
 
 // ======================================================
 // 5. CLASIFICADOR DE NOTAS
@@ -218,70 +219,86 @@ app.get('/api/health', (_req, res) => {
 });
 
 // ======================================================
-// 8. ANÁLISIS DE NOTAS
+// 8. ANÁLISIS DE NOTAS - MOD-03
 // ======================================================
 
-app.post('/api/notes/analyze', (req, res) => {
-  const text = req.body?.text;
+app.post('/api/notes/analyze', async (req, res, next) => {
+  try {
+    const noteModule = await getDB()
+      .collection('modules')
+      .findOne({ key: 'noteanalysis' });
 
-  if (typeof text !== 'string') {
-    return res.status(400).json({
-      error: 'El campo text debe ser una cadena de texto.'
+    if (!noteModule || noteModule.active !== true) {
+      return res.status(403).json({
+        success: false,
+        error: 'El módulo de análisis de notas está desactivado.'
+      });
+    }
+
+    const text = req.body?.text;
+
+    if (typeof text !== 'string') {
+      return res.status(400).json({
+        error: 'El campo text debe ser una cadena de texto.'
+      });
+    }
+
+    const normalizedText = text.trim();
+
+    if (!normalizedText) {
+      return res.status(400).json({
+        error: 'Escribe una nota antes de analizarla.'
+      });
+    }
+
+    if (normalizedText.length > MAX_NOTE_LENGTH) {
+      return res.status(413).json({
+        error: `La nota supera el límite de ${MAX_NOTE_LENGTH} caracteres.`
+      });
+    }
+
+    const fragments = splitIntoFragments(normalizedText);
+
+    const items = fragments.map((fragment, index) => {
+      const classification = classifyFragment(fragment);
+
+      return {
+        id: index + 1,
+        text: fragment,
+        category: classification.category,
+        label: classification.label
+      };
     });
-  }
 
-  const normalizedText = text.trim();
-
-  if (!normalizedText) {
-    return res.status(400).json({
-      error: 'Escribe una nota antes de analizarla.'
-    });
-  }
-
-  if (normalizedText.length > MAX_NOTE_LENGTH) {
-    return res.status(413).json({
-      error: `La nota supera el límite de ${MAX_NOTE_LENGTH} caracteres.`
-    });
-  }
-
-  const fragments = splitIntoFragments(normalizedText);
-
-  const items = fragments.map((fragment, index) => {
-    const classification = classifyFragment(fragment);
-
-    return {
-      id: index + 1,
-      text: fragment,
-      category: classification.category,
-      label: classification.label
+    const grouped = {
+      tasks: [],
+      objectives: [],
+      questions: [],
+      decisions: [],
+      concerns: [],
+      ideas: [],
+      knowledge: [],
+      review: []
     };
-  });
 
-  const grouped = {
-    tasks: [],
-    objectives: [],
-    questions: [],
-    decisions: [],
-    concerns: [],
-    ideas: [],
-    knowledge: [],
-    review: []
-  };
+    for (const item of items) {
+      grouped[item.category].push(item);
+    }
 
-  for (const item of items) {
-    grouped[item.category].push(item);
+    return res.json({
+      success: true,
+      totalFragments: items.length,
+      items,
+      grouped,
+      notice:
+        'Clasificación orientativa: revisa los resultados y corrige las categorías que no representen tu intención.',
+      privacy:
+        'Esta API no guarda las notas en una base de datos. El texto se procesa en memoria durante la solicitud.'
+    });
+
+  } catch (error) {
+    next(error);
   }
-
-  return res.json({
-    success: true,
-    totalFragments: items.length,
-    items,
-    grouped,
-    notice:
-      'Clasificación orientativa: revisa los resultados y corrige las categorías que no representen tu intención.',
-    privacy:
-      'Esta API no guarda las notas en una base de datos. El texto se procesa en memoria durante la solicitud.'
-  });
 });
 
 // ======================================================
@@ -319,7 +336,6 @@ app.use((error, _req, res, _next) => {
 // ======================================================
 
 async function createIndexes(db) {
-  // Usuarios.
   await db.collection('users').createIndex(
     { email: 1 },
     {
@@ -328,7 +344,6 @@ async function createIndexes(db) {
     }
   );
 
-  // Catálogo RBAC.
   await db.collection('roles').createIndex(
     { key: 1 },
     {
@@ -345,7 +360,6 @@ async function createIndexes(db) {
     }
   );
 
-  // Permisos asociados a roles.
   await db.collection('role_permissions').createIndex(
     { roleId: 1, permissionId: 1 },
     {
@@ -354,7 +368,6 @@ async function createIndexes(db) {
     }
   );
 
-  // Asignaciones de roles.
   await db.collection('role_assignments').createIndex(
     { userId: 1, roleId: 1 },
     {
@@ -387,6 +400,24 @@ async function createIndexes(db) {
       name: 'audit_target_created'
     }
   );
+
+  // MOD-03: módulos.
+  await db.collection('modules').createIndex(
+    { key: 1 },
+    {
+      unique: true,
+      name: 'module_key_unique'
+    }
+  );
+
+  // CFG-05: configuración del sistema.
+  await db.collection('system_settings').createIndex(
+    { section: 1, key: 1 },
+    {
+      unique: true,
+      name: 'system_settings_section_key_unique'
+    }
+  );
 }
 
 // ======================================================
@@ -403,6 +434,23 @@ async function startServer() {
 
   await createIndexes(db);
 
+  // MOD-03: módulo de análisis de notas.
+  await db.collection('modules').updateOne(
+    { key: 'noteanalysis' },
+    {
+      $setOnInsert: {
+        name: 'NoteAnalysis',
+        key: 'noteanalysis',
+        description: 'Analiza y clasifica el contenido de la hoja en blanco.',
+        location: 'blank_sheet',
+        active: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    },
+    { upsert: true }
+  );
+
   return new Promise((resolve, reject) => {
     const server = app.listen(PORT, HOST);
 
@@ -417,6 +465,10 @@ async function startServer() {
       console.log(`Estado: http://${HOST}:${PORT}/api/health`);
       console.log('Autenticación: /api/auth');
       console.log('Usuarios: /api/users');
+      console.log('Accesos: /api/access');
+      console.log('Módulos: /api/modules');
+      console.log('Auditoría: /api/audit');
+      console.log('Configuración: /api/configuration');
       console.log('Análisis: /api/notes/analyze');
       console.log('------------------------------------');
 
@@ -500,4 +552,3 @@ module.exports = {
   classifyFragment,
   splitIntoFragments
 };
-

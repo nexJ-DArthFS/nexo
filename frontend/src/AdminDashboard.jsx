@@ -1,10 +1,21 @@
 
-import { useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthContext.jsx";
 import "./Admin.css";
+
 import Users from "./admin/pages/Users.jsx";
 import Access from "./admin/pages/Access.jsx";
+import Modules from "./admin/pages/Modules.jsx";
+import Audit from "./admin/pages/Audit.jsx";
+import Configuration from "./admin/pages/Configuration.jsx";
+
+import {
+  listUsers,
+  getAccessCatalog,
+  getModules,
+  getAuditLogs,
+} from "./admin/services/adminService.js";
 
 const sections = [
   { id: "overview", code: "SYS-00", label: "Resumen", icon: "◈" },
@@ -15,38 +26,30 @@ const sections = [
   { id: "configuration", code: "CFG-05", label: "Configuración", icon: "⚙" },
 ];
 
-const sectionContent = {
-  users: {
-    eyebrow: "PERSONNEL MANAGEMENT / USR-01",
-    title: "Personal y usuarios",
-    description: "Administración de las cuentas registradas en NEXORA.",
-    message: "El módulo de gestión de usuarios está pendiente de conexión.",
-  },
-  access: {
-    eyebrow: "ACCESS CONTROL / ACL-02",
-    title: "Control de acceso",
-    description: "Administración de roles, permisos y asignaciones.",
-    message: "El módulo de roles y permisos está pendiente de conexión.",
-  },
-  modules: {
-    eyebrow: "SYSTEM MODULES / MOD-03",
-    title: "Módulos del sistema",
-    description: "Supervisión de los módulos funcionales de NEXORA.",
-    message: "El catálogo de módulos está pendiente de conexión.",
-  },
-  audit: {
-    eyebrow: "SYSTEM RECORDS / LOG-04",
-    title: "Registro de actividad",
-    description: "Consulta de eventos y operaciones administrativas.",
-    message: "El registro de auditoría está pendiente de conexión.",
-  },
-  configuration: {
-    eyebrow: "SYSTEM CONFIGURATION / CFG-05",
-    title: "Configuración",
-    description: "Parámetros generales del entorno administrativo.",
-    message: "La configuración administrativa está pendiente de conexión.",
-  },
-};
+// Extrae una lista de diferentes formatos de respuesta de la API.
+function extractArray(data, possibleKeys) {
+  if (Array.isArray(data)) return data;
+
+  for (const key of possibleKeys) {
+    if (Array.isArray(data?.[key])) return data[key];
+    if (Array.isArray(data?.data?.[key])) return data.data[key];
+  }
+
+  return [];
+}
+
+// Busca un total informado por el backend.
+function extractTotal(data, possibleKeys, fallback) {
+  for (const key of possibleKeys) {
+    const value = data?.[key] ?? data?.data?.[key];
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+
+  return fallback;
+}
 
 function AdminDashboard() {
   const [activeSection, setActiveSection] = useState("overview");
@@ -184,20 +187,18 @@ function AdminDashboard() {
 
         <div className="admin-content">
           {activeSection === "overview" ? (
-            <Overview
-              user={user}
-              onNavigate={selectSection}
-            />
+            <Overview user={user} onNavigate={selectSection} />
           ) : activeSection === "users" ? (
             <Users />
           ) : activeSection === "access" ? (
             <Access />
-          ) : (
-            <ModulePlaceholder
-              section={currentSection}
-              content={sectionContent[activeSection]}
-            />
-          )}
+          ) : activeSection === "modules" ? (
+            <Modules />
+          ) : activeSection === "audit" ? (
+            <Audit />
+          ) : activeSection === "configuration" ? (
+            <Configuration />
+          ) : null}
 
           <footer className="admin-footer">
             <span>NEXORA ADMINISTRATION CORE</span>
@@ -211,6 +212,111 @@ function AdminDashboard() {
 }
 
 function Overview({ user, onNavigate }) {
+  const [metrics, setMetrics] = useState({
+    users: "—",
+    roles: "—",
+    modules: "—",
+    events: "—",
+  });
+
+  const [loading, setLoading] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState(null);
+  const [error, setError] = useState("");
+
+  const loadMetrics = useCallback(async () => {
+    try {
+      const results = await Promise.allSettled([
+        listUsers({ skip: 0, limit: 1 }),
+        getAccessCatalog(),
+        getModules(),
+        getAuditLogs({ skip: 0, limit: 1 }),
+      ]);
+
+      const nextMetrics = {};
+
+      // USR-01: usuarios
+      if (results[0].status === "fulfilled") {
+        const data = results[0].value;
+        const users = extractArray(data, ["users", "items", "results"]);
+
+        nextMetrics.users = extractTotal(
+          data,
+          ["total", "totalUsers", "count", "totalCount"],
+          users.length
+        );
+      } else {
+        nextMetrics.users = "!";
+      }
+
+      // ACL-02: roles
+      if (results[1].status === "fulfilled") {
+        const data = results[1].value;
+        const roles = extractArray(data, ["roles", "items"]);
+
+        nextMetrics.roles = extractTotal(
+          data,
+          ["totalRoles", "rolesCount"],
+          roles.length
+        );
+      } else {
+        nextMetrics.roles = "!";
+      }
+
+      // MOD-03: módulos activos
+      if (results[2].status === "fulfilled") {
+        const data = results[2].value;
+        const modules = extractArray(data, ["modules", "items", "results"]);
+
+        nextMetrics.modules = modules.filter(
+          (module) => module.active === true
+        ).length;
+      } else {
+        nextMetrics.modules = "!";
+      }
+
+      // LOG-04: eventos registrados
+      if (results[3].status === "fulfilled") {
+        const data = results[3].value;
+        const logs = extractArray(data, ["logs", "events", "items", "results"]);
+
+        nextMetrics.events = extractTotal(
+          data,
+          ["total", "totalLogs", "totalEvents", "count", "totalCount"],
+          logs.length
+        );
+      } else {
+        nextMetrics.events = "!";
+      }
+
+      setMetrics(nextMetrics);
+
+      const hasErrors = results.some(
+        (result) => result.status === "rejected"
+      );
+
+      setError(
+        hasErrors
+          ? "Algunos indicadores no pudieron actualizarse."
+          : ""
+      );
+
+      setLastUpdate(new Date());
+    } catch (err) {
+      console.error("Error al actualizar indicadores:", err);
+      setError("No se pudieron actualizar los indicadores.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMetrics();
+
+    const interval = setInterval(loadMetrics, 60000);
+
+    return () => clearInterval(interval);
+  }, [loadMetrics]);
+
   return (
     <>
       <section className="admin-welcome">
@@ -263,41 +369,59 @@ function Overview({ user, onNavigate }) {
         <div>
           <span className="admin-eyebrow">SYSTEM MONITORING / 001</span>
           <h2>Estado del sistema</h2>
+          {lastUpdate && (
+            <small>
+              Última actualización: {lastUpdate.toLocaleTimeString()}
+            </small>
+          )}
         </div>
 
-        <span className="admin-section-code">LIVE MONITOR</span>
+        <button
+          type="button"
+          className="admin-refresh-button"
+          onClick={loadMetrics}
+          disabled={loading}
+        >
+          {loading ? "ACTUALIZANDO..." : "↻ ACTUALIZAR"}
+        </button>
       </section>
+
+      {error && (
+        <p className="admin-panel-note" role="status">
+          {error}
+        </p>
+      )}
 
       <div className="admin-metrics">
         <MetricCard
           code="USR-01"
           label="USUARIOS"
-          value="—"
-          detail="Datos pendientes de conexión"
+          value={metrics.users}
+          detail={metrics.users === "!" ? "Error de consulta" : "Usuarios registrados"}
           icon="◎"
         />
 
         <MetricCard
           code="ACL-02"
           label="ROLES"
-          value="—"
-          detail="Datos pendientes de conexión"
+          value={metrics.roles}
+          detail={metrics.roles === "!" ? "Error de consulta" : "Roles registrados"}
           icon="▤"
         />
 
         <MetricCard
           code="MOD-03"
           label="MÓDULOS"
-          value="—"
-          detail="Datos pendientes de conexión"
+          value={metrics.modules}
+          detail={metrics.modules === "!" ? "Error de consulta" : "Módulos activos"}
           icon="▦"
         />
 
         <MetricCard
           code="LOG-04"
           label="EVENTOS"
-          value="—"
-          detail="Datos pendientes de conexión"
+          value={metrics.events}
+          detail={metrics.events === "!" ? "Error de consulta" : "Eventos registrados"}
           icon="≋"
         />
       </div>
@@ -328,20 +452,19 @@ function Overview({ user, onNavigate }) {
 
             <DiagnosticRow
               label="Base de datos"
-              value="NO VERIFICADA"
-              status="pending"
+              value="CONSULTADA"
+              status="online"
             />
 
             <DiagnosticRow
               label="Servicios administrativos"
-              value="PENDIENTES"
-              status="pending"
+              value={error ? "PARCIAL" : "CONECTADOS"}
+              status={error ? "pending" : "online"}
             />
           </div>
 
           <p className="admin-panel-note">
-            Los estados pendientes requieren comprobación mediante servicios
-            reales. No representan fallos confirmados.
+            Los indicadores se consultan desde los servicios administrativos.
           </p>
         </section>
 
@@ -356,7 +479,7 @@ function Overview({ user, onNavigate }) {
           </div>
 
           <div className="admin-shortcuts">
-            {sections.slice(1, 5).map((section) => (
+            {sections.slice(1).map((section) => (
               <button
                 type="button"
                 key={section.id}
@@ -386,16 +509,22 @@ function Overview({ user, onNavigate }) {
             <h3>Actividad reciente</h3>
           </div>
 
-          <span className="admin-panel-code">LOG / 03</span>
+          <button
+            type="button"
+            className="admin-refresh-button"
+            onClick={() => onNavigate("audit")}
+          >
+            VER AUDITORÍA ↗
+          </button>
         </div>
 
         <div className="admin-empty-state">
           <span className="admin-empty-icon">≋</span>
-          <strong>NO DATA AVAILABLE</strong>
+          <strong>CONSULTAR REGISTROS</strong>
 
           <p>
-            El historial de actividad aparecerá aquí cuando conectemos el
-            servicio de auditoría.
+            Accede al módulo LOG-04 para consultar el historial de actividad
+            administrativa.
           </p>
         </div>
       </section>
@@ -426,40 +555,6 @@ function DiagnosticRow({ label, value, status }) {
       <span className="admin-diagnostic-label">{label}</span>
       <strong data-status={status}>{value}</strong>
     </div>
-  );
-}
-
-function ModulePlaceholder({ section, content }) {
-  if (!content) return null;
-
-  return (
-    <section className="admin-module-page">
-      <div className="admin-eyebrow">
-        <span className="admin-status-light" />
-        {content.eyebrow}
-      </div>
-
-      <div className="admin-module-title-row">
-        <div>
-          <h1>{content.title}</h1>
-          <p>{content.description}</p>
-        </div>
-
-        <span className="admin-module-code">{section?.code}</span>
-      </div>
-
-      <div className="admin-panel admin-module-placeholder">
-        <div className="admin-placeholder-symbol">⌘</div>
-        <span className="admin-eyebrow">MODULE INITIALIZATION</span>
-        <h2>INTERFACE PENDING</h2>
-        <p>{content.message}</p>
-
-        <div className="admin-placeholder-status">
-          <span className="admin-status-light pending" />
-          AWAITING SERVICE INTEGRATION
-        </div>
-      </div>
-    </section>
   );
 }
 

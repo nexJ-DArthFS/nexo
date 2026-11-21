@@ -1,0 +1,2477 @@
+﻿========== NEXORA | DIAGNOSTICO FRONTEND ==========
+
+[1] ESTRUCTURA DEL FRONTEND
+.gitignore
+DIAGNOSTICO_FRONTEND_ACTUAL.txt
+eslint.config.js
+index.html
+package-lock.json
+package.json
+README.md
+vite.config.js
+public\favicon.svg
+public\icons.svg
+src\Admin.css
+src\AdminDashboard.jsx
+src\AdminRoute.jsx
+src\App.css
+src\App.jsx
+src\Auth.css
+src\Auth.jsx
+src\AuthContext.jsx
+src\Dashboard.jsx
+src\index.css
+src\main.jsx
+src\ProtectedRoute.jsx
+src\Welcome.css
+src\Welcome.jsx
+src\admin\pages\Access.jsx
+src\admin\pages\Users.jsx
+src\admin\services\adminService.js
+src\assets\hero.png
+src\assets\react.svg
+src\assets\vite.svg
+src\services\noteAnalysis.js
+
+[2] PACKAGE.JSON
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "eslint": "^10.13.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "globals": "^17.13.0",
+    "vite": "^8.3.4"
+  }
+}
+
+[3] ARCHIVOS DE ADMINISTRACION
+
+--- C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx ---
+
+import { useEffect, useMemo, useState } from "react";
+
+import {
+  getAccessCatalog,
+  getUserAssignments,
+  listUsers,
+  assignUserRole,
+  updateUserAssignment,
+  revokeUserAssignment,
+} from "../services/adminService";
+
+// =========================================
+// UTILIDADES
+// =========================================
+
+function formatDate(value) {
+  if (!value) return "Sin fecha";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "Fecha no vÃ¡lida";
+
+  return new Intl.DateTimeFormat("es-EC", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function formatScope(scope) {
+  if (!scope) return "No especificado";
+
+  if (typeof scope === "string") {
+    return scope.replaceAll("_", " ");
+  }
+
+  if (typeof scope === "object") {
+    const type = scope.type || scope.level || "personal";
+
+    const target =
+      scope.module ||
+      (scope.resourceType && scope.resourceId
+        ? `${scope.resourceType}/${scope.resourceId}`
+        : scope.resource || scope.id);
+
+    return target ? `${type}: ${target}` : type;
+  }
+
+  return String(scope);
+}
+
+function getAssignmentStatus(assignment) {
+  if (assignment.effective) {
+    return {
+      label: "Efectiva",
+      className: "effective",
+    };
+  }
+
+  if (assignment.expired) {
+    return {
+      label: "Vencida",
+      className: "expired",
+    };
+  }
+
+  if (!assignment.active) {
+    return {
+      label: "Inactiva",
+      className: "inactive",
+    };
+  }
+
+  if (!assignment.scopeAllowed) {
+    return {
+      label: "Alcance invÃ¡lido",
+      className: "invalid",
+    };
+  }
+
+  if (!assignment.role) {
+    return {
+      label: "Rol no disponible",
+      className: "invalid",
+    };
+  }
+
+  if (assignment.role.active === false) {
+    return {
+      label: "Rol inactivo",
+      className: "inactive",
+    };
+  }
+
+  return {
+    label: "No efectiva",
+    className: "inactive",
+  };
+}
+
+// Alcances permitidos por rol.
+// El backend conserva la validaciÃ³n definitiva.
+function getScopeTypeForRole(roleKey) {
+  const scopes = {
+    super_admin: "global",
+    admin: "global",
+    module_manager: "module",
+    moderator: "resource",
+    user: "global",
+  };
+
+  return scopes[roleKey] || "";
+}
+
+function createEmptyAssignmentForm() {
+  return {
+    roleId: "",
+    module: "",
+    resourceType: "",
+    resourceId: "",
+    expiresAt: "",
+  };
+}
+
+function buildAssignmentScope(role, form) {
+  const scopeType = getScopeTypeForRole(role?.key);
+
+  if (scopeType === "global") {
+    return { type: "global" };
+  }
+
+  if (scopeType === "module") {
+    return {
+      type: "module",
+      module: form.module.trim(),
+    };
+  }
+
+  if (scopeType === "resource") {
+    return {
+      type: "resource",
+      resourceType: form.resourceType.trim(),
+      resourceId: form.resourceId.trim(),
+    };
+  }
+
+  throw new Error(
+    "No se reconoce el alcance permitido para este rol."
+  );
+}
+
+function toDateTimeLocal(value) {
+  if (!value) return "";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  const offset = date.getTimezoneOffset() * 60000;
+
+  return new Date(date.getTime() - offset)
+    .toISOString()
+    .slice(0, 16);
+}
+
+// =========================================
+// COMPONENTE PRINCIPAL
+// =========================================
+
+export default function Access() {
+  const [catalog, setCatalog] = useState({
+    roles: [],
+    permissions: [],
+    rolePermissions: [],
+  });
+
+  const [users, setUsers] = useState([]);
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [userAssignments, setUserAssignments] = useState(null);
+
+  const [search, setSearch] = useState("");
+
+  const [loading, setLoading] = useState(true);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(false);
+
+  const [error, setError] = useState("");
+  const [usersError, setUsersError] = useState("");
+  const [assignmentsError, setAssignmentsError] = useState("");
+
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // =========================================
+  // ACL-04: ESTADO DE GESTIÃ“N
+  // =========================================
+
+  const [assignmentForm, setAssignmentForm] = useState(
+    createEmptyAssignmentForm()
+  );
+
+  const [editingAssignmentId, setEditingAssignmentId] = useState("");
+
+  const [assignmentActionLoading, setAssignmentActionLoading] =
+    useState(false);
+
+  const [assignmentActionError, setAssignmentActionError] = useState("");
+  const [assignmentActionMessage, setAssignmentActionMessage] = useState("");
+
+  // =========================================
+  // CARGAR CATÃLOGO
+  // =========================================
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCatalog() {
+      setLoading(true);
+      setError("");
+
+      try {
+        const result = await getAccessCatalog();
+
+        if (cancelled) return;
+
+        setCatalog({
+          roles: result.roles || [],
+          permissions: result.permissions || [],
+          rolePermissions: result.rolePermissions || [],
+        });
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err.message || "No se pudo cargar el catÃ¡logo."
+          );
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadCatalog();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+
+  // =========================================
+  // CARGAR USUARIOS
+  // =========================================
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadUsers() {
+      setUsersLoading(true);
+      setUsersError("");
+
+      try {
+        const result = await listUsers({
+          skip: 0,
+          limit: 100,
+        });
+
+        if (cancelled) return;
+
+        const receivedUsers = result.users || [];
+
+        setUsers(receivedUsers);
+
+        if (
+          selectedUserId &&
+          !receivedUsers.some(
+            (user) => String(user._id || user.id) === selectedUserId
+          )
+        ) {
+          setSelectedUserId("");
+          setUserAssignments(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setUsersError(
+            err.message || "No se pudieron consultar los usuarios."
+          );
+        }
+      } finally {
+        if (!cancelled) setUsersLoading(false);
+      }
+    }
+
+    loadUsers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+
+  // =========================================
+  // BUSCAR USUARIOS
+  // =========================================
+
+  const filteredUsers = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    if (!normalizedSearch) return users;
+
+    return users.filter((user) => {
+      const name = (user.name || "").toLowerCase();
+      const email = (user.email || "").toLowerCase();
+
+      return (
+        name.includes(normalizedSearch) ||
+        email.includes(normalizedSearch)
+      );
+    });
+  }, [users, search]);
+
+  // =========================================
+  // CONSULTAR ASIGNACIONES
+  // =========================================
+
+  async function handleSelectUser(userId) {
+    setSelectedUserId(userId);
+    setUserAssignments(null);
+
+    setAssignmentsError("");
+    setEditingAssignmentId("");
+    setAssignmentForm(createEmptyAssignmentForm());
+
+    setAssignmentActionError("");
+    setAssignmentActionMessage("");
+
+    if (!userId) return;
+
+    setAssignmentsLoading(true);
+
+    try {
+      const result = await getUserAssignments(userId);
+      setUserAssignments(result);
+    } catch (err) {
+      setAssignmentsError(
+        err.message || "No se pudieron consultar las asignaciones."
+      );
+    } finally {
+      setAssignmentsLoading(false);
+    }
+  }
+
+  // =========================================
+  // ACL-04: GESTIÃ“N DE ASIGNACIONES
+  // =========================================
+
+  function handleAssignmentFormChange(field, value) {
+    setAssignmentForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function handleRoleChange(roleId) {
+    setAssignmentForm({
+      ...createEmptyAssignmentForm(),
+      roleId,
+    });
+  }
+
+  function handleCancelAssignmentEdit() {
+    setEditingAssignmentId("");
+    setAssignmentForm(createEmptyAssignmentForm());
+
+    setAssignmentActionError("");
+    setAssignmentActionMessage("");
+  }
+
+  async function reloadSelectedUserAssignments() {
+    if (!selectedUserId) return;
+
+    const result = await getUserAssignments(selectedUserId);
+
+    setUserAssignments(result);
+  }
+
+  // =========================================
+  // ACL-04: ASIGNAR O MODIFICAR
+  // =========================================
+
+  async function handleAssignmentSubmit(event) {
+    event.preventDefault();
+
+    if (!selectedUserId) {
+      setAssignmentActionError(
+        "Selecciona primero un usuario."
+      );
+      return;
+    }
+
+    const selectedRole = catalog.roles.find(
+      (role) => String(role._id) === assignmentForm.roleId
+    );
+
+    if (!selectedRole || selectedRole.active === false) {
+      setAssignmentActionError(
+        "Selecciona un rol activo."
+      );
+      return;
+    }
+
+    const scopeType = getScopeTypeForRole(selectedRole.key);
+
+    if (!scopeType) {
+      setAssignmentActionError(
+        "Este rol no tiene un alcance configurado en la interfaz."
+      );
+      return;
+    }
+
+    if (
+      scopeType === "module" &&
+      !assignmentForm.module.trim()
+    ) {
+      setAssignmentActionError(
+        "Indica el mÃ³dulo para este rol."
+      );
+      return;
+    }
+
+    if (
+      scopeType === "resource" &&
+      (
+        !assignmentForm.resourceType.trim() ||
+        !assignmentForm.resourceId.trim()
+      )
+    ) {
+      setAssignmentActionError(
+        "Completa el tipo y el identificador del recurso."
+      );
+      return;
+    }
+
+    let expiresAt = null;
+
+    if (assignmentForm.expiresAt) {
+      const expirationDate = new Date(
+        assignmentForm.expiresAt
+      );
+
+      if (Number.isNaN(expirationDate.getTime())) {
+        setAssignmentActionError(
+          "La fecha de vencimiento no es vÃ¡lida."
+        );
+        return;
+      }
+
+      if (expirationDate <= new Date()) {
+        setAssignmentActionError(
+          "La fecha de vencimiento debe ser futura."
+        );
+        return;
+      }
+
+      expiresAt = expirationDate.toISOString();
+    }
+
+    try {
+      setAssignmentActionLoading(true);
+      setAssignmentActionError("");
+      setAssignmentActionMessage("");
+
+      const scope = buildAssignmentScope(
+        selectedRole,
+        assignmentForm
+      );
+
+      if (editingAssignmentId) {
+        await updateUserAssignment(
+          editingAssignmentId,
+          {
+            scope,
+            expiresAt,
+          }
+        );
+
+        setAssignmentActionMessage(
+          "AsignaciÃ³n actualizada correctamente."
+        );
+      } else {
+        await assignUserRole({
+          userId: selectedUserId,
+          roleId: assignmentForm.roleId,
+          scope,
+          expiresAt,
+        });
+
+        setAssignmentActionMessage(
+          "Rol asignado correctamente."
+        );
+      }
+
+      await reloadSelectedUserAssignments();
+
+      setEditingAssignmentId("");
+      setAssignmentForm(createEmptyAssignmentForm());
+    } catch (err) {
+      setAssignmentActionError(
+        err.message || "No se pudo guardar la asignaciÃ³n."
+      );
+    } finally {
+      setAssignmentActionLoading(false);
+    }
+  }
+
+  // =========================================
+  // ACL-04: INICIAR EDICIÃ“N
+  // =========================================
+
+  function handleStartAssignmentEdit(assignment) {
+    if (!assignment.active || !assignment.role) return;
+
+    setEditingAssignmentId(assignment.id);
+
+    setAssignmentForm({
+      roleId: String(assignment.roleId),
+      module: assignment.scope?.module || "",
+      resourceType: assignment.scope?.resourceType || "",
+      resourceId: assignment.scope?.resourceId || "",
+      expiresAt: toDateTimeLocal(assignment.expiresAt),
+    });
+
+    setAssignmentActionError("");
+    setAssignmentActionMessage("");
+  }
+
+  // =========================================
+  // ACL-04: REVOCAR ASIGNACIÃ“N
+  // =========================================
+
+  async function handleRevokeAssignment(assignment) {
+    if (!assignment.active) return;
+
+    const confirmed = window.confirm(
+      `Â¿Deseas revocar la asignaciÃ³n del rol "${assignment.role?.name || "seleccionado"}"? Esta acciÃ³n no elimina el historial.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setAssignmentActionLoading(true);
+      setAssignmentActionError("");
+      setAssignmentActionMessage("");
+
+      await revokeUserAssignment(assignment.id);
+
+      await reloadSelectedUserAssignments();
+
+      if (editingAssignmentId === assignment.id) {
+        setEditingAssignmentId("");
+        setAssignmentForm(createEmptyAssignmentForm());
+      }
+
+      setAssignmentActionMessage(
+        "AsignaciÃ³n revocada correctamente."
+      );
+    } catch (err) {
+      setAssignmentActionError(
+        err.message || "No se pudo revocar la asignaciÃ³n."
+      );
+    } finally {
+      setAssignmentActionLoading(false);
+    }
+  }
+
+  // =========================================
+  // PROCESAR MATRIZ RBAC
+  // =========================================
+
+  const permissionsByRole = useMemo(() => {
+    const result = new Map();
+
+    for (const role of catalog.roles) {
+      result.set(String(role._id), []);
+    }
+
+    for (const relation of catalog.rolePermissions) {
+      const permissions = result.get(String(relation.roleId));
+
+      if (permissions) {
+        permissions.push(String(relation.permissionId));
+      }
+    }
+
+    return result;
+  }, [catalog]);
+
+  const relationSet = useMemo(() => {
+    return new Set(
+      catalog.rolePermissions.map(
+        (relation) =>
+          `${relation.roleId}:${relation.permissionId}`
+      )
+    );
+  }, [catalog.rolePermissions]);
+
+  const permissionsByModule = useMemo(() => {
+    const groups = new Map();
+
+    for (const permission of catalog.permissions) {
+      const moduleName = permission.module || "other";
+
+      if (!groups.has(moduleName)) {
+        groups.set(moduleName, []);
+      }
+
+      groups.get(moduleName).push(permission);
+    }
+
+    return groups;
+  }, [catalog.permissions]);
+
+  const selectedUser = userAssignments?.user || null;
+  const assignments = userAssignments?.assignments || [];
+
+  const effectiveCount = assignments.filter(
+    (assignment) => assignment.effective
+  ).length;
+
+  // =========================================
+  // INTERFAZ
+  // =========================================
+
+  return (
+    <section className="admin-access">
+
+      {/* ENCABEZADO */}
+
+      <header className="admin-section-heading">
+        <div>
+          <span className="admin-eyebrow">
+            ACCESS CONTROL / ACL-02
+          </span>
+
+          <h2>Control de acceso</h2>
+
+          <p>
+            Consulta los roles, permisos y relaciones de autorizaciÃ³n
+            configurados en NEXORA.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          className="admin-refresh-button"
+          onClick={() => setRefreshKey((value) => value + 1)}
+          disabled={loading || usersLoading}
+        >
+          {loading || usersLoading
+            ? "Consultando..."
+            : "Actualizar"}
+        </button>
+      </header>
+
+      {error && (
+        <div className="admin-users-error" role="alert">
+          <strong>Error de catÃ¡logo</strong>
+          <p>{error}</p>
+        </div>
+      )}
+
+      {/* RESUMEN */}
+
+      <div className="admin-users-summary">
+        <article className="admin-users-summary-card">
+          <span>ROLES REGISTRADOS</span>
+          <strong>
+            {loading ? "â€”" : catalog.roles.length}
+          </strong>
+        </article>
+
+        <article className="admin-users-summary-card">
+          <span>PERMISOS REGISTRADOS</span>
+          <strong>
+            {loading ? "â€”" : catalog.permissions.length}
+          </strong>
+        </article>
+
+        <article className="admin-users-summary-card">
+          <span>RELACIONES CONFIGURADAS</span>
+          <strong>
+            {loading ? "â€”" : catalog.rolePermissions.length}
+          </strong>
+        </article>
+      </div>
+
+      {/* ACL-03 Y ACL-04: ASIGNACIONES DE USUARIOS */}
+
+      <section className="admin-panel admin-assignment-panel">
+
+        <div className="admin-panel-heading">
+          <div>
+            <span className="admin-eyebrow">
+              ACL-03 / ACL-04
+            </span>
+
+            <h3>Asignaciones de roles</h3>
+          </div>
+
+          <span className="admin-panel-code">
+            USER ACCESS
+          </span>
+        </div>
+
+        <p className="admin-panel-note">
+          Selecciona una cuenta para consultar, asignar, modificar
+          o revocar sus roles y alcances.
+        </p>
+
+        {/* BUSCADOR */}
+
+        <div className="admin-assignment-search">
+          <label htmlFor="access-user-search">
+            BUSCAR USUARIO
+          </label>
+
+          <input
+            id="access-user-search"
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Nombre o correo electrÃ³nico..."
+            disabled={usersLoading}
+          />
+
+          <span className="admin-assignment-search-count">
+            {usersLoading
+              ? "Consultando usuarios..."
+              : `${filteredUsers.length} resultados`}
+          </span>
+        </div>
+
+        {usersError && (
+          <div className="admin-users-error" role="alert">
+            {usersError}
+          </div>
+        )}
+
+        {/* LISTA DE USUARIOS */}
+
+        <div className="admin-assignment-user-list">
+          {usersLoading ? (
+            <p>Consultando usuarios...</p>
+          ) : filteredUsers.length === 0 ? (
+            <p>No se encontraron usuarios.</p>
+          ) : (
+            filteredUsers.map((user) => {
+              const userId = String(user._id || user.id);
+
+              return (
+                <button
+                  type="button"
+                  key={userId}
+                  className={`admin-assignment-user ${
+                    selectedUserId === userId ? "selected" : ""
+                  }`}
+                  onClick={() => handleSelectUser(userId)}
+                >
+                  <span className="admin-assignment-avatar">
+                    {(user.name || user.email || "U")
+                      .charAt(0)
+                      .toUpperCase()}
+                  </span>
+
+                  <span className="admin-assignment-user-info">
+                    <strong>
+                      {user.name || "Usuario sin nombre"}
+                    </strong>
+                    <small>{user.email}</small>
+                  </span>
+
+                  <span className="admin-assignment-user-status">
+                    {user.status || "Sin estado"}
+                  </span>
+
+                  <span className="admin-assignment-arrow">
+                    â€º
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        {users.length >= 100 && (
+          <p className="admin-panel-note">
+            Se muestran hasta 100 usuarios. La bÃºsqueda actual se
+            realiza dentro de los resultados cargados.
+          </p>
+        )}
+
+        {/* ERRORES DE CONSULTA */}
+
+        {assignmentsError && (
+          <div className="admin-users-error" role="alert">
+            <strong>Error de asignaciones</strong>
+            <p>{assignmentsError}</p>
+          </div>
+        )}
+
+        {assignmentsLoading && (
+          <div className="admin-assignment-empty">
+            Consultando asignaciones del usuario...
+          </div>
+        )}
+
+        {/* DETALLE DEL USUARIO */}
+
+        {!assignmentsLoading && selectedUserId && selectedUser && (
+          <div className="admin-assignment-details">
+
+            <div className="admin-panel-heading">
+              <div>
+                <span className="admin-eyebrow">
+                  SELECTED ACCOUNT
+                </span>
+
+                <h3>{selectedUser.name || "Usuario"}</h3>
+                <p>{selectedUser.email}</p>
+              </div>
+
+              <span className="admin-assignment-account-status">
+                {selectedUser.status || "Sin estado"}
+              </span>
+            </div>
+
+            {/* RESUMEN DE ASIGNACIONES */}
+
+            <div className="admin-assignment-summary">
+              <div>
+                <span>ASIGNACIONES</span>
+                <strong>{assignments.length}</strong>
+              </div>
+
+              <div>
+                <span>EFECTIVAS</span>
+                <strong>{effectiveCount}</strong>
+              </div>
+
+              <div>
+                <span>NO EFECTIVAS</span>
+                <strong>
+                  {assignments.length - effectiveCount}
+                </strong>
+              </div>
+            </div>
+
+            {/* FORMULARIO ACL-04 */}
+
+            <section
+              className="admin-panel"
+              style={{
+                marginTop: "1.25rem",
+                padding: "1rem",
+              }}
+            >
+              <div className="admin-panel-heading">
+                <div>
+                  <span className="admin-eyebrow">
+                    ACL-04 / ROLE MANAGEMENT
+                  </span>
+
+                  <h3>
+                    {editingAssignmentId
+                      ? "Modificar asignaciÃ³n"
+                      : "Asignar un rol"}
+                  </h3>
+                </div>
+
+                {editingAssignmentId && (
+                  <button
+                    type="button"
+                    className="admin-refresh-button"
+                    onClick={handleCancelAssignmentEdit}
+                    disabled={assignmentActionLoading}
+                  >
+                    Cancelar ediciÃ³n
+                  </button>
+                )}
+              </div>
+
+              <form onSubmit={handleAssignmentSubmit}>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: "1rem",
+                    marginTop: "1rem",
+                  }}
+                >
+                  {/* SELECCIÃ“N DE ROL */}
+
+                  <label>
+                    <span>ROL</span>
+
+                    <select
+                      value={assignmentForm.roleId}
+                      onChange={(event) =>
+                        handleRoleChange(event.target.value)
+                      }
+                      required
+                      disabled={
+                        assignmentActionLoading ||
+                        Boolean(editingAssignmentId)
+                      }
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        marginTop: ".4rem",
+                      }}
+                    >
+                      <option value="">
+                        Selecciona un rol
+                      </option>
+
+                      {catalog.roles
+                        .filter((role) => role.active !== false)
+                        .map((role) => (
+                          <option
+                            key={String(role._id)}
+                            value={String(role._id)}
+                          >
+                            {role.name} ({role.key})
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+
+                  {/* CAMPOS SEGÃšN ALCANCE */}
+
+                  {(() => {
+                    const selectedRole = catalog.roles.find(
+                      (role) =>
+                        String(role._id) === assignmentForm.roleId
+                    );
+
+                    const scopeType = getScopeTypeForRole(
+                      selectedRole?.key
+                    );
+
+                    if (scopeType === "module") {
+                      return (
+                        <label>
+                          <span>MÃ“DULO</span>
+
+                          <input
+                            type="text"
+                            value={assignmentForm.module}
+                            onChange={(event) =>
+                              handleAssignmentFormChange(
+                                "module",
+                                event.target.value
+                              )
+                            }
+                            placeholder="Ej. notes"
+                            required
+                            disabled={assignmentActionLoading}
+                            style={{
+                              display: "block",
+                              width: "100%",
+                              marginTop: ".4rem",
+                            }}
+                          />
+                        </label>
+                      );
+                    }
+
+                    if (scopeType === "resource") {
+                      return (
+                        <>
+                          <label>
+                            <span>TIPO DE RECURSO</span>
+
+                            <input
+                              type="text"
+                              value={assignmentForm.resourceType}
+                              onChange={(event) =>
+                                handleAssignmentFormChange(
+                                  "resourceType",
+                                  event.target.value
+                                )
+                              }
+                              placeholder="Ej. document"
+                              required
+                              disabled={assignmentActionLoading}
+                              style={{
+                                display: "block",
+                                width: "100%",
+                                marginTop: ".4rem",
+                              }}
+                            />
+                          </label>
+
+                          <label>
+                            <span>ID DEL RECURSO</span>
+
+                            <input
+                              type="text"
+                              value={assignmentForm.resourceId}
+                              onChange={(event) =>
+                                handleAssignmentFormChange(
+                                  "resourceId",
+                                  event.target.value
+                                )
+                              }
+                              placeholder="Identificador del recurso"
+                              required
+                              disabled={assignmentActionLoading}
+                              style={{
+                                display: "block",
+                                width: "100%",
+                                marginTop: ".4rem",
+                              }}
+                            />
+                          </label>
+                        </>
+                      );
+                    }
+
+                    if (scopeType === "global") {
+                      return (
+                        <div>
+                          <span>ALCANCE</span>
+                          <p style={{ marginTop: ".4rem" }}>
+                            Global
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return null;
+                  })()}
+
+                  {/* VENCIMIENTO */}
+
+                  <label>
+                    <span>VENCIMIENTO (OPCIONAL)</span>
+
+                    <input
+                      type="datetime-local"
+                      value={assignmentForm.expiresAt}
+                      onChange={(event) =>
+                        handleAssignmentFormChange(
+                          "expiresAt",
+                          event.target.value
+                        )
+                      }
+                      disabled={assignmentActionLoading}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        marginTop: ".4rem",
+                      }}
+                    />
+                  </label>
+                </div>
+
+                {/* MENSAJES */}
+
+                {assignmentActionError && (
+                  <div
+                    className="admin-users-error"
+                    role="alert"
+                    style={{ marginTop: "1rem" }}
+                  >
+                    {assignmentActionError}
+                  </div>
+                )}
+
+                {assignmentActionMessage && (
+                  <p
+                    role="status"
+                    style={{ marginTop: "1rem" }}
+                  >
+                    {assignmentActionMessage}
+                  </p>
+                )}
+
+                {/* BOTÃ“N DE ENVÃO */}
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: ".75rem",
+                    marginTop: "1rem",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    type="submit"
+                    className="admin-refresh-button"
+                    disabled={
+                      assignmentActionLoading ||
+                      !assignmentForm.roleId ||
+                      !selectedUserId
+                    }
+                  >
+                    {assignmentActionLoading
+                      ? "Procesando..."
+                      : editingAssignmentId
+                        ? "Guardar cambios"
+                        : "Asignar rol"}
+                  </button>
+                </div>
+              </form>
+            </section>
+
+            {/* TARJETAS DE ASIGNACIONES */}
+
+            {assignments.length === 0 ? (
+              <div className="admin-assignment-empty">
+                Este usuario no tiene asignaciones registradas.
+              </div>
+            ) : (
+              <div className="admin-assignment-cards">
+                {assignments.map((assignment) => {
+                  const status = getAssignmentStatus(assignment);
+
+                  return (
+                    <article
+                      className="admin-assignment-card"
+                      key={assignment.id}
+                    >
+                      <div className="admin-assignment-card-top">
+                        <div>
+                          <span className="admin-eyebrow">
+                            ROLE ASSIGNMENT
+                          </span>
+
+                          <h4>
+                            {assignment.role?.name ||
+                              "Rol no disponible"}
+                          </h4>
+
+                          <small>
+                            {assignment.role?.key ||
+                              "Sin identificador"}
+                          </small>
+                        </div>
+
+                        <span
+                          className={`admin-assignment-badge ${status.className}`}
+                        >
+                          {status.label}
+                        </span>
+                      </div>
+
+                      <div className="admin-assignment-data">
+
+                        <div>
+                          <span>ALCANCE</span>
+                          <strong>
+                            {formatScope(assignment.scope)}
+                          </strong>
+                        </div>
+
+                        <div>
+                          <span>ASIGNADO</span>
+                          <strong>
+                            {formatDate(assignment.assignedAt)}
+                          </strong>
+                        </div>
+
+                        <div>
+                          <span>VENCIMIENTO</span>
+                          <strong>
+                            {assignment.expiresAt
+                              ? formatDate(assignment.expiresAt)
+                              : "Sin vencimiento"}
+                          </strong>
+                        </div>
+
+                        <div>
+                          <span>PROTECCIÃ“N DEL ROL</span>
+                          <strong>
+                            {assignment.role?.protected
+                              ? "Protegido"
+                              : "No protegido"}
+                          </strong>
+                        </div>
+
+                        <div>
+                          <span>ORIGEN</span>
+                          <strong>
+                            {assignment.source || "No especificado"}
+                          </strong>
+                        </div>
+
+                        <div>
+                          <span>ALCANCE VÃLIDO</span>
+                          <strong>
+                            {assignment.scopeAllowed ? "SÃ­" : "No"}
+                          </strong>
+                        </div>
+                      </div>
+
+                      {/* ACCIONES */}
+
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: ".6rem",
+                          flexWrap: "wrap",
+                          marginTop: "1rem",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="admin-refresh-button"
+                          onClick={() =>
+                            handleStartAssignmentEdit(assignment)
+                          }
+                          disabled={
+                            assignmentActionLoading ||
+                            !assignment.active ||
+                            !assignment.role
+                          }
+                        >
+                          Modificar
+                        </button>
+
+                        <button
+                          type="button"
+                          className="admin-refresh-button"
+                          onClick={() =>
+                            handleRevokeAssignment(assignment)
+                          }
+                          disabled={
+                            assignmentActionLoading ||
+                            !assignment.active
+                          }
+                        >
+                          Revocar
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ESTADO SIN USUARIO SELECCIONADO */}
+
+        {!selectedUserId && !usersLoading && (
+          <div className="admin-assignment-empty">
+            <strong>SELECCIONA UNA CUENTA</strong>
+
+            <p>
+              Elige un usuario de la lista para consultar sus
+              asignaciones de roles.
+            </p>
+          </div>
+        )}
+      </section>
+
+      {/* MATRIZ RBAC */}
+
+      <section className="admin-panel">
+        <div className="admin-panel-heading">
+          <div>
+            <span className="admin-eyebrow">
+              RBAC / PERMISSION MATRIX
+            </span>
+
+            <h3>Matriz de permisos</h3>
+          </div>
+
+          <span className="admin-panel-code">
+            ACL / 03
+          </span>
+        </div>
+
+        <p className="admin-panel-note">
+          Cada fila representa un rol. Cada columna representa
+          un permiso. La marca indica que existe una relaciÃ³n
+          configurada.
+        </p>
+
+        <div className="admin-access-legend">
+          <span>
+            <strong className="admin-access-allowed">âœ“</strong>
+            Permiso asignado
+          </span>
+
+          <span>
+            <strong className="admin-access-denied">â€”</strong>
+            Sin asignaciÃ³n
+          </span>
+        </div>
+
+        {loading ? (
+          <p>Construyendo matriz de permisos...</p>
+        ) : catalog.roles.length === 0 ||
+          catalog.permissions.length === 0 ? (
+          <p>
+            No hay suficientes datos para construir la matriz.
+          </p>
+        ) : (
+          <div className="admin-users-table-wrapper admin-access-matrix-wrapper">
+            <table
+              className="admin-users-table admin-access-matrix"
+              aria-label="Matriz de permisos por rol"
+            >
+              <thead>
+                <tr>
+                  <th className="admin-access-role-column">
+                    ROL
+                  </th>
+
+                  {catalog.permissions.map((permission) => (
+                    <th
+                      key={String(permission._id)}
+                      title={`${permission.name} (${permission.key})`}
+                    >
+                      <span>{permission.key}</span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody>
+                {catalog.roles.map((role) => (
+                  <tr key={String(role._id)}>
+                    <td className="admin-access-role-column">
+                      <strong>{role.name}</strong>
+                      <small>{role.key}</small>
+                    </td>
+
+                    {catalog.permissions.map((permission) => {
+                      const assigned = relationSet.has(
+                        `${String(role._id)}:${String(permission._id)}`
+                      );
+
+                      return (
+                        <td
+                          key={`${role._id}-${permission._id}`}
+                          className={
+                            assigned
+                              ? "admin-access-cell-assigned"
+                              : "admin-access-cell-empty"
+                          }
+                        >
+                          {assigned ? "âœ“" : "â€”"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* DIRECTORIO DE ROLES */}
+
+      <section className="admin-panel">
+        <div className="admin-panel-heading">
+          <div>
+            <span className="admin-eyebrow">
+              RBAC / ROLE DIRECTORY
+            </span>
+
+            <h3>Roles del sistema</h3>
+          </div>
+
+          <span className="admin-panel-code">
+            ACL / 01
+          </span>
+        </div>
+
+        {loading ? (
+          <p>Consultando roles...</p>
+        ) : (
+          <div className="admin-users-table-wrapper">
+            <table className="admin-users-table">
+              <thead>
+                <tr>
+                  <th>ROL</th>
+                  <th>IDENTIFICADOR</th>
+                  <th>PERMISOS</th>
+                  <th>PROTECCIÃ“N</th>
+                  <th>ESTADO</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {catalog.roles.map((role) => (
+                  <tr key={String(role._id)}>
+                    <td>
+                      <strong>{role.name}</strong>
+                    </td>
+
+                    <td>{role.key}</td>
+
+                    <td>
+                      {permissionsByRole.get(String(role._id))?.length || 0}
+                    </td>
+
+                    <td>
+                      {role.protected
+                        ? "Protegido"
+                        : "Modificable"}
+                    </td>
+
+                    <td>
+                      {role.active ? "Activo" : "Inactivo"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* DIRECTORIO DE PERMISOS */}
+
+      <section className="admin-panel">
+        <div className="admin-panel-heading">
+          <div>
+            <span className="admin-eyebrow">
+              RBAC / PERMISSION DIRECTORY
+            </span>
+
+            <h3>Permisos del sistema</h3>
+          </div>
+
+          <span className="admin-panel-code">
+            ACL / 02
+          </span>
+        </div>
+
+        {loading ? (
+          <p>Consultando permisos...</p>
+        ) : (
+          Array.from(permissionsByModule.entries()).map(
+            ([moduleName, permissions]) => (
+              <div
+                className="admin-access-module-group"
+                key={moduleName}
+              >
+                <h4>{moduleName.toUpperCase()}</h4>
+
+                <div className="admin-users-table-wrapper">
+                  <table className="admin-users-table">
+                    <thead>
+                      <tr>
+                        <th>PERMISO</th>
+                        <th>IDENTIFICADOR</th>
+                        <th>MÃ“DULO</th>
+                        <th>DESCRIPCIÃ“N</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {permissions.map((permission) => (
+                        <tr key={String(permission._id)}>
+                          <td>
+                            <strong>{permission.name}</strong>
+                          </td>
+
+                          <td>{permission.key}</td>
+                          <td>{permission.module}</td>
+
+                          <td>
+                            {permission.description || "Sin descripciÃ³n"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          )
+        )}
+      </section>
+    </section>
+  );
+}
+
+--- C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Users.jsx ---
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  listUsers,
+  getUserById,
+  updateUser,
+  updateUserStatus,
+} from "../services/adminService";
+import { useAuth } from "../../AuthContext.jsx";
+
+const PAGE_SIZE = 20;
+
+const STATUS_LABELS = {
+  pending: "Pendiente",
+  active: "Activo",
+  suspended: "Suspendido",
+  disabled: "Deshabilitado",
+};
+
+function formatDate(value) {
+  if (!value) return "Sin registro";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Fecha no disponible";
+  }
+
+  return new Intl.DateTimeFormat("es-EC", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+export default function Users() {
+  const { user: currentUser, hasPermission } = useAuth();
+
+  const canEditUsers = hasPermission("users.update");
+  const canManageStatus = hasPermission("users.manage_status");
+
+  const [users, setUsers] = useState([]);
+
+  const [pagination, setPagination] = useState({
+    total: 0,
+    skip: 0,
+    limit: PAGE_SIZE,
+  });
+
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
+
+  const [status, setStatus] = useState("");
+  const [search, setSearch] = useState("");
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // =========================================
+  // ESTADOS DE EDICIÃ“N Y MODIFICACIÃ“N
+  // =========================================
+
+  const [editingName, setEditingName] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [savingUser, setSavingUser] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const [actionSuccess, setActionSuccess] = useState("");
+
+  // =========================================
+  // CARGAR LISTADO DE USUARIOS
+  // =========================================
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadUsers() {
+      setLoading(true);
+      setError("");
+
+      try {
+        const result = await listUsers({
+          skip: pagination.skip,
+          limit: PAGE_SIZE,
+          status,
+        });
+
+        if (cancelled) return;
+
+        setUsers(result.users || []);
+
+        setPagination(
+          result.pagination || {
+            total: 0,
+            skip: pagination.skip,
+            limit: PAGE_SIZE,
+          }
+        );
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err.message || "No se pudieron cargar los usuarios."
+          );
+          setUsers([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadUsers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pagination.skip, status, refreshKey]);
+
+  // =========================================
+  // CONSULTAR PERFIL INDIVIDUAL
+  // =========================================
+
+  async function openUser(userId) {
+    setSelectedUser(null);
+    setDetailError("");
+    setActionError("");
+    setActionSuccess("");
+    setEditingName(false);
+    setDetailLoading(true);
+
+    try {
+      const user = await getUserById(userId);
+      setSelectedUser(user);
+    } catch (err) {
+      console.error("Error al consultar usuario:", err);
+
+      setDetailError(
+        err.message || "No se pudo consultar el usuario."
+      );
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  function closeUser() {
+    if (savingUser) return;
+
+    setSelectedUser(null);
+    setDetailError("");
+    setActionError("");
+    setActionSuccess("");
+    setEditingName(false);
+  }
+
+  // =========================================
+  // EDITAR NOMBRE DEL USUARIO
+  // =========================================
+
+  function startEditingName() {
+    setNewName(selectedUser?.name || "");
+    setEditingName(true);
+    setActionError("");
+    setActionSuccess("");
+  }
+
+  async function handleUpdateName(event) {
+    event.preventDefault();
+
+    if (!selectedUser || !canEditUsers || savingUser) return;
+
+    const normalizedName = newName.trim();
+
+    if (normalizedName.length < 2 || normalizedName.length > 80) {
+      setActionError(
+        "El nombre debe tener entre 2 y 80 caracteres."
+      );
+      return;
+    }
+
+    if (normalizedName === selectedUser.name) {
+      setEditingName(false);
+      return;
+    }
+
+    setSavingUser(true);
+    setActionError("");
+    setActionSuccess("");
+
+    try {
+      const result = await updateUser(selectedUser._id, {
+        name: normalizedName,
+      });
+
+      const updatedUser = result.user;
+
+      if (updatedUser) {
+        setSelectedUser(updatedUser);
+      } else {
+        const refreshedUser = await getUserById(selectedUser._id);
+        setSelectedUser(refreshedUser);
+      }
+
+      setEditingName(false);
+      setActionSuccess("Nombre actualizado correctamente.");
+      setRefreshKey((value) => value + 1);
+    } catch (err) {
+      setActionError(
+        err.message || "No se pudo actualizar el nombre."
+      );
+    } finally {
+      setSavingUser(false);
+    }
+  }
+
+  // =========================================
+  // CAMBIAR ESTADO DE LA CUENTA
+  // =========================================
+
+  async function handleUpdateStatus(newStatus) {
+    if (!selectedUser || !canManageStatus || savingUser) return;
+
+    if (!STATUS_LABELS[newStatus]) return;
+
+    if (
+      String(currentUser?._id) === String(selectedUser._id)
+    ) {
+      setActionError(
+        "No puedes modificar el estado de tu propia cuenta."
+      );
+      return;
+    }
+
+    if (newStatus === selectedUser.status) return;
+
+    const confirmation = window.confirm(
+      `Â¿Confirmas cambiar el estado de esta cuenta a "${STATUS_LABELS[newStatus]}"?`
+    );
+
+    if (!confirmation) return;
+
+    setSavingUser(true);
+    setActionError("");
+    setActionSuccess("");
+
+    try {
+      const result = await updateUserStatus(
+        selectedUser._id,
+        newStatus
+      );
+
+      if (result.user) {
+        setSelectedUser(result.user);
+      } else {
+        const refreshedUser = await getUserById(selectedUser._id);
+        setSelectedUser(refreshedUser);
+      }
+
+      setActionSuccess(
+        "Estado de cuenta actualizado correctamente."
+      );
+
+      setRefreshKey((value) => value + 1);
+    } catch (err) {
+      setActionError(
+        err.message || "No se pudo actualizar el estado."
+      );
+
+      // Recuperar el valor real del servidor si hubo un error.
+      try {
+        const refreshedUser = await getUserById(selectedUser._id);
+        setSelectedUser(refreshedUser);
+      } catch {
+        // Se conserva el error original.
+      }
+    } finally {
+      setSavingUser(false);
+    }
+  }
+
+  // =========================================
+  // BÃšSQUEDA LOCAL
+  // =========================================
+
+  const filteredUsers = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    if (!normalizedSearch) return users;
+
+    return users.filter((user) => {
+      const name = user.name || "";
+      const email = user.email || "";
+
+      return (
+        name.toLowerCase().includes(normalizedSearch) ||
+        email.toLowerCase().includes(normalizedSearch)
+      );
+    });
+  }, [users, search]);
+
+  // =========================================
+  // PAGINACIÃ“N
+  // =========================================
+
+  const currentPage =
+    Math.floor(pagination.skip / PAGE_SIZE) + 1;
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(pagination.total / PAGE_SIZE)
+  );
+
+  function changeStatus(value) {
+    setStatus(value);
+    setSearch("");
+
+    setPagination((current) => ({
+      ...current,
+      skip: 0,
+    }));
+  }
+
+  function previousPage() {
+    setPagination((current) => ({
+      ...current,
+      skip: Math.max(0, current.skip - PAGE_SIZE),
+    }));
+  }
+
+  function nextPage() {
+    if (currentPage >= totalPages) return;
+
+    setPagination((current) => ({
+      ...current,
+      skip: current.skip + PAGE_SIZE,
+    }));
+  }
+
+  // =========================================
+  // INTERFAZ
+  // =========================================
+
+  return (
+    <section className="admin-users">
+      <header className="admin-section-header">
+        <div>
+          <span className="admin-eyebrow">
+            GESTIÃ“N DE IDENTIDADES
+          </span>
+
+          <h1>Personal / Usuarios</h1>
+
+          <p>
+            Consulta y supervisa las cuentas registradas en NEXORA.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          className="admin-refresh-button"
+          onClick={() => setRefreshKey((value) => value + 1)}
+          disabled={loading}
+        >
+          {loading ? "Consultando..." : "Actualizar"}
+        </button>
+      </header>
+
+      {/* RESUMEN */}
+
+      <div className="admin-users-summary">
+        <div className="admin-users-summary-card">
+          <span>USUARIOS REGISTRADOS</span>
+          <strong>{pagination.total}</strong>
+        </div>
+
+        <div className="admin-users-summary-card">
+          <span>RESULTADOS EN ESTA PÃGINA</span>
+          <strong>{users.length}</strong>
+        </div>
+      </div>
+
+      {/* BÃšSQUEDA Y FILTROS */}
+
+      <div className="admin-users-toolbar">
+        <input
+          type="search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Buscar en esta pÃ¡gina por nombre o correo..."
+          aria-label="Buscar usuarios en esta pÃ¡gina"
+        />
+
+        <select
+          value={status}
+          onChange={(event) => changeStatus(event.target.value)}
+          aria-label="Filtrar usuarios por estado"
+        >
+          <option value="">Todos los estados</option>
+          <option value="pending">Pendientes</option>
+          <option value="active">Activos</option>
+          <option value="suspended">Suspendidos</option>
+          <option value="disabled">Deshabilitados</option>
+        </select>
+      </div>
+
+      {/* ERRORES */}
+
+      {error && (
+        <div className="admin-users-error" role="alert">
+          <strong>Error de consulta</strong>
+          <p>{error}</p>
+
+          {error.includes("403") && (
+            <p>
+              Tu cuenta no tiene autorizaciÃ³n para consultar usuarios.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* TABLA */}
+
+      <div className="admin-users-table-wrapper">
+        <table className="admin-users-table">
+          <thead>
+            <tr>
+              <th>USUARIO</th>
+              <th>CORREO ELECTRÃ“NICO</th>
+              <th>ESTADO</th>
+              <th>FECHA DE REGISTRO</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan="4" className="admin-users-empty">
+                  Consultando base de datos...
+                </td>
+              </tr>
+            ) : error ? (
+              <tr>
+                <td colSpan="4" className="admin-users-empty">
+                  No fue posible obtener los registros.
+                </td>
+              </tr>
+            ) : filteredUsers.length === 0 ? (
+              <tr>
+                <td colSpan="4" className="admin-users-empty">
+                  No se encontraron usuarios.
+                </td>
+              </tr>
+            ) : (
+              filteredUsers.map((user) => (
+                <tr
+                  key={user._id}
+                  className="admin-user-row"
+                  onClick={() => openUser(user._id)}
+                  title="Consultar perfil del usuario"
+                >
+                  <td>{user.name || "Sin nombre"}</td>
+
+                  <td>{user.email || "Sin correo"}</td>
+
+                  <td>
+                    <span
+                      className={`admin-user-status status-${user.status || "unknown"}`}
+                    >
+                      {STATUS_LABELS[user.status] || "Desconocido"}
+                    </span>
+                  </td>
+
+                  <td>{formatDate(user.createdAt)}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* PAGINACIÃ“N */}
+
+      <footer className="admin-users-pagination">
+        <span>
+          PÃ¡gina {currentPage} de {totalPages}
+          {" Â· "}
+          {pagination.total} registros
+        </span>
+
+        <div>
+          <button
+            type="button"
+            onClick={previousPage}
+            disabled={loading || pagination.skip === 0}
+          >
+            Anterior
+          </button>
+
+          <button
+            type="button"
+            onClick={nextPage}
+            disabled={loading || currentPage >= totalPages}
+          >
+            Siguiente
+          </button>
+        </div>
+      </footer>
+
+      {/* FICHA INDIVIDUAL */}
+
+      {(detailLoading || selectedUser || detailError) && (
+        <div className="admin-user-modal-overlay">
+          <div
+            className="admin-user-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-user-modal-title"
+          >
+            <header className="admin-user-modal-header">
+              <div>
+                <span className="admin-eyebrow">
+                  REGISTRO DE IDENTIDAD
+                </span>
+
+                <h2 id="admin-user-modal-title">
+                  Perfil del usuario
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeUser}
+                aria-label="Cerrar perfil"
+                disabled={savingUser}
+              >
+                Ã—
+              </button>
+            </header>
+
+            {detailLoading && (
+              <p>Consultando informaciÃ³n del usuario...</p>
+            )}
+
+            {detailError && (
+              <div className="admin-users-error" role="alert">
+                {detailError}
+              </div>
+            )}
+
+            {selectedUser && (
+              <div className="admin-user-profile">
+                <div className="admin-user-avatar">
+                  {(selectedUser.name || "U")
+                    .charAt(0)
+                    .toUpperCase()}
+                </div>
+
+                <h3>{selectedUser.name || "Sin nombre"}</h3>
+
+                <p>{selectedUser.email || "Sin correo"}</p>
+
+                {/* MENSAJES DE OPERACIÃ“N */}
+
+                {actionError && (
+                  <div className="admin-users-error" role="alert">
+                    {actionError}
+                  </div>
+                )}
+
+                {actionSuccess && (
+                  <p
+                    className="admin-user-action-success"
+                    role="status"
+                  >
+                    {actionSuccess}
+                  </p>
+                )}
+
+                {/* EDICIÃ“N DEL NOMBRE */}
+
+                {canEditUsers && (
+                  <section className="admin-user-edit-section">
+                    {!editingName ? (
+                      <button
+                        type="button"
+                        onClick={startEditingName}
+                        disabled={savingUser}
+                      >
+                        Editar nombre
+                      </button>
+                    ) : (
+                      <form onSubmit={handleUpdateName}>
+                        <label htmlFor="admin-user-new-name">
+                          Nombre del usuario
+                        </label>
+
+                        <input
+                          id="admin-user-new-name"
+                          type="text"
+                          value={newName}
+                          onChange={(event) =>
+                            setNewName(event.target.value)
+                          }
+                          minLength={2}
+                          maxLength={80}
+                          required
+                          disabled={savingUser}
+                        />
+
+                        <button
+                          type="submit"
+                          disabled={savingUser}
+                        >
+                          {savingUser
+                            ? "Guardando..."
+                            : "Guardar cambios"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingName(false);
+                            setActionError("");
+                          }}
+                          disabled={savingUser}
+                        >
+                          Cancelar
+                        </button>
+                      </form>
+                    )}
+                  </section>
+                )}
+
+                {/* GESTIÃ“N DEL ESTADO */}
+
+                {canManageStatus && (
+                  <section className="admin-user-edit-section">
+                    <label htmlFor="admin-user-status">
+                      Estado de la cuenta
+                    </label>
+
+                    <select
+                      id="admin-user-status"
+                      value={selectedUser.status || ""}
+                      onChange={(event) =>
+                        handleUpdateStatus(event.target.value)
+                      }
+                      disabled={
+                        savingUser ||
+                        String(currentUser?._id) ===
+                          String(selectedUser._id)
+                      }
+                    >
+                      <option value="pending">Pendiente</option>
+                      <option value="active">Activo</option>
+                      <option value="suspended">Suspendido</option>
+                      <option value="disabled">Deshabilitado</option>
+                    </select>
+
+                    {String(currentUser?._id) ===
+                      String(selectedUser._id) && (
+                      <small>
+                        No puedes cambiar el estado de tu propia cuenta.
+                      </small>
+                    )}
+                  </section>
+                )}
+
+                {/* INFORMACIÃ“N DEL PERFIL */}
+
+                <div className="admin-user-profile-data">
+                  <div>
+                    <span>IDENTIFICADOR</span>
+                    <strong>{selectedUser._id}</strong>
+                  </div>
+
+                  <div>
+                    <span>ESTADO DE CUENTA</span>
+                    <strong>
+                      {STATUS_LABELS[selectedUser.status] ||
+                        "Desconocido"}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>FECHA DE REGISTRO</span>
+                    <strong>
+                      {formatDate(selectedUser.createdAt)}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>ÃšLTIMA ACTUALIZACIÃ“N</span>
+                    <strong>
+                      {formatDate(selectedUser.updatedAt)}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+--- C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\services\adminService.js ---
+
+const API_URL = "http://localhost:3001/api";
+
+// =========================================
+// UTILIDAD PARA PETICIONES
+// =========================================
+
+async function request(endpoint, options = {}) {
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    credentials: "include",
+    cache: "no-store",
+    ...options,
+    headers: {
+      Accept: "application/json",
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...options.headers,
+    },
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      data.message ||
+      data.error ||
+      `Error en la peticiÃ³n (${response.status}).`
+    );
+  }
+
+  return data;
+}
+
+// =========================================
+// CONSULTAR USUARIOS
+// =========================================
+
+export async function listUsers({
+  skip = 0,
+  limit = 20,
+  status = "",
+} = {}) {
+  const params = new URLSearchParams({
+    skip: String(skip),
+    limit: String(limit),
+  });
+
+  if (status) {
+    params.set("status", status);
+  }
+
+  return request(`/users?${params.toString()}`, {
+    method: "GET",
+  });
+}
+
+// =========================================
+// CONSULTAR PERFIL INDIVIDUAL
+// =========================================
+
+export async function getUserById(id) {
+  const data = await request(
+    `/users/${encodeURIComponent(id)}`,
+    { method: "GET" }
+  );
+
+  return data.user;
+}
+
+// =========================================
+// ACTUALIZAR PERFIL
+// =========================================
+
+export async function updateUser(id, changes) {
+  return request(`/users/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(changes),
+  });
+}
+
+// =========================================
+// ACTUALIZAR ESTADO
+// =========================================
+
+export async function updateUserStatus(id, status) {
+  return request(`/users/${encodeURIComponent(id)}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+// =========================================
+// ACL-02: CONSULTAR CATÃLOGO
+// =========================================
+
+export async function getAccessCatalog() {
+  return request("/access/catalog", {
+    method: "GET",
+  });
+}
+
+// =========================================
+// ACL-03: CONSULTAR ASIGNACIONES
+// =========================================
+
+export async function getUserAssignments(userId) {
+  return request(
+    `/access/users/${encodeURIComponent(userId)}/assignments`,
+    {
+      method: "GET",
+    }
+  );
+}
+
+// =========================================
+// ACL-04: GESTIÃ“N DE ASIGNACIONES
+// =========================================
+
+// ASIGNAR ROL
+export async function assignUserRole(data) {
+  return request("/access/assignments", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// MODIFICAR ASIGNACIÃ“N
+export async function updateUserAssignment(assignmentId, changes) {
+  return request(
+    `/access/assignments/${encodeURIComponent(assignmentId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(changes),
+    }
+  );
+}
+
+// REVOCAR ASIGNACIÃ“N
+export async function revokeUserAssignment(assignmentId) {
+  return request(
+    `/access/assignments/${encodeURIComponent(assignmentId)}`,
+    {
+      method: "DELETE",
+    }
+  );
+}
+
+[4] NAVEGACION Y RUTAS ADMIN
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:5: getAccessCatalog,
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:170: export default function Access() {
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:221: const result = await getAccessCatalog();
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:631: <section className="admin-access">
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:638: ACCESS CONTROL / ACL-02
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:707: USER ACCESS
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:719: <label htmlFor="access-user-search">
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:724: id="access-user-search"
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:1289: <div className="admin-access-legend">
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:1291: <strong className="admin-access-allowed">✓</strong>
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:1296: <strong className="admin-access-denied">—</strong>
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:1309: <div className="admin-users-table-wrapper admin-access-matrix-wrapper">
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:1311: className="admin-users-table admin-access-matrix"
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:1316: <th className="admin-access-role-column">
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:1334: <td className="admin-access-role-column">
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:1349: ? "admin-access-cell-assigned"
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:1350: : "admin-access-cell-empty"
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\pages\Access.jsx:1450: className="admin-access-module-group"
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\services\adminService.js:95: export async function getAccessCatalog() {
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\services\adminService.js:96: return request("/access/catalog", {
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\services\adminService.js:107: `/access/users/${encodeURIComponent(userId)}/assignments`,
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\services\adminService.js:120: return request("/access/assignments", {
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\services\adminService.js:129: `/access/assignments/${encodeURIComponent(assignmentId)}`,
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\admin\services\adminService.js:140: `/access/assignments/${encodeURIComponent(assignmentId)}`,
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:6: import Users from "./admin/pages/Users.jsx";
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:7: import Access from "./admin/pages/Access.jsx";
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:12: { id: "access", code: "ACL-02", label: "Control de acceso", icon: "▤" },
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:13: { id: "modules", code: "MOD-03", label: "Módulos", icon: "▦" },
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:14: { id: "audit", code: "LOG-04", label: "Registro de actividad", icon: "≋" },
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:15: { id: "configuration", code: "CFG-05", label: "Configuración", icon: "⚙" },
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:25: access: {
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:26: eyebrow: "ACCESS CONTROL / ACL-02",
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:31: modules: {
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:32: eyebrow: "SYSTEM MODULES / MOD-03",
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:37: audit: {
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:41: message: "El registro de auditoría está pendiente de conexión.",
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:43: configuration: {
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:44: eyebrow: "SYSTEM CONFIGURATION / CFG-05",
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:51: function AdminDashboard() {
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:193: ) : activeSection === "access" ? (
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:194: <Access />
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:204: <span>INTERNAL SYSTEMS / AUTHORIZED ACCESS ONLY</span>
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:238: <span>ACCESS: AUTHENTICATED</span>
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:351: <span className="admin-eyebrow">QUICK ACCESS</span>
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:398: servicio de auditoría.
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminDashboard.jsx:466: export default AdminDashboard;
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminRoute.jsx:5: export default function AdminRoute({ children }) {
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminRoute.jsx:20: const canAccessAdmin = permissions.some(
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\AdminRoute.jsx:24: if (!canAccessAdmin) {
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\App.jsx:3: import AdminDashboard from "./AdminDashboard.jsx";
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\App.jsx:8: import AdminRoute from "./AdminRoute.jsx";
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\App.jsx:37: <AdminRoute>
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\App.jsx:38: <AdminDashboard />
+C:\Users\juanf\OneDrive\Desktop\NEXORA\frontend\src\App.jsx:39: </AdminRoute>
+
+[5] ESTADO DE GIT
+ D ../DIAGNOSTICO-FRONTEND.txt
+ M ../backend/DIAGNOSTICO_BACKEND_ACTUAL.txt
+?? DIAGNOSTICO_FRONTEND_ACTUAL.txt
+
+========== FIN DEL DIAGNOSTICO ==========

@@ -143,3 +143,67 @@ export async function revokeUserAssignment(assignmentId) {
     }
   );
 }
+
+
+// =========================================
+// MOD-03: GESTIÓN DE MÓDULOS
+// =========================================
+
+export async function getModules() {
+  return request("/modules", {
+    method: "GET",
+  });
+}
+
+export async function registerModule(moduleData) {
+  return request("/modules", {
+    method: "POST",
+    body: JSON.stringify(moduleData),
+  });
+}
+
+export async function updateModuleStatus(key, active) {
+  return request(
+    `/modules/${encodeURIComponent(key)}/status`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ active }),
+    }
+  );
+}
+
+// =========================================
+// LOG-04: CONSULTAR AUDITORÍA
+// =========================================
+
+export async function getAuditLogs({
+  skip = 0,
+  limit = 20,
+} = {}) {
+  const params = new URLSearchParams({
+    skip: String(skip),
+    limit: String(limit),
+  });
+
+  return request(`/audit?${params.toString()}`, {
+    method: "GET",
+  });
+}
+
+
+// =========================================
+// CFG-05: CONFIGURACIÓN DEL SISTEMA
+// =========================================
+
+export async function getConfiguration() {
+  return request("/configuration", {
+    method: "GET",
+  });
+}
+
+export async function updateConfiguration(settings) {
+  return request("/configuration", {
+    method: "PATCH",
+    body: JSON.stringify(settings),
+  });
+}
