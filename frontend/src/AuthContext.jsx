@@ -1,4 +1,4 @@
-
+import { API_BASE_URL } from "./config/api.js";
 import {
   createContext,
   useCallback,
@@ -9,7 +9,6 @@ import {
 
 const AuthContext = createContext(null);
 
-const API_URL = "http://localhost:3001";
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -18,7 +17,7 @@ export function AuthProvider({ children }) {
 
   const refreshUser = useCallback(async () => {
     try {
-      const response = await fetch(`${API_URL}/api/auth/me`, {
+      const response = await fetch(`${API_BASE_URL}/auth/me`, {
   method: "GET",
   credentials: "include",
   cache: "no-store",
@@ -67,7 +66,7 @@ export function AuthProvider({ children }) {
   }, [refreshUser]);
 
   const logout = useCallback(async () => {
-    const response = await fetch(`${API_URL}/api/auth/logout`, {
+    const response = await fetch(`${API_BASE_URL}/auth/logout`, {
       method: "POST",
       credentials: "include",
     });

@@ -1,14 +1,17 @@
 
-const API_URL =
-  import.meta.env.VITE_API_URL || "http://127.0.0.1:3001";
+import { API_BASE_URL } from "../config/api.js";
+
+// =========================================
+// ANALIZAR NOTA
+// =========================================
 
 export async function analyzeNote(text) {
-  const response = await fetch(`${API_URL}/api/notes/analyze`, {
+  const response = await fetch(`${API_BASE_URL}/notes/analyze`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
-    body: JSON.stringify({ text })
+    body: JSON.stringify({ text }),
   });
 
   let data;
@@ -28,8 +31,12 @@ export async function analyzeNote(text) {
   return data;
 }
 
+// =========================================
+// COMPROBAR DISPONIBILIDAD DE LA API
+// =========================================
+
 export async function checkNotesApi() {
-  const response = await fetch(`${API_URL}/api/health`);
+  const response = await fetch(`${API_BASE_URL}/health`);
 
   if (!response.ok) {
     throw new Error("No se pudo comprobar la API de NEXORA.");

@@ -759,3 +759,146 @@
     transition: none !important;
   }
 }
+
+
+/* =========================================
+   PLANES NEXORA
+========================================= */
+
+.welcome-plans {
+  position: relative;
+  padding: 100px 8%;
+  z-index: 1;
+}
+
+.welcome-plans-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  max-width: 950px;
+  margin: 48px auto 0;
+}
+
+.welcome-plan-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 34px;
+  min-height: 390px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 18px;
+  transition: transform 0.25s ease, border-color 0.25s ease;
+}
+
+.welcome-plan-card:hover {
+  transform: translateY(-5px);
+  border-color: rgba(139, 195, 125, 0.5);
+}
+
+.welcome-plan-featured {
+  border-color: rgba(139, 195, 125, 0.45);
+  background: rgba(139, 195, 125, 0.055);
+}
+
+.plan-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.plan-audience,
+.plan-recommended {
+  font-size: 0.72rem;
+  letter-spacing: 1.2px;
+  color: var(--muted, #a4aa9e);
+}
+
+.plan-recommended {
+  color: var(--leaf-bright, #a4d58e);
+}
+
+.welcome-plan-card h2 {
+  margin: 0 0 12px;
+  font-size: 1.7rem;
+  color: var(--text, #f0f1e9);
+}
+
+.plan-description {
+  min-height: 65px;
+  margin: 0;
+  line-height: 1.7;
+  font-size: 0.92rem;
+  color: var(--muted, #a4aa9e);
+}
+
+.plan-price {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 28px 0;
+}
+
+.plan-price strong {
+  font-size: 2.8rem;
+  font-weight: 600;
+  color: var(--text, #f0f1e9);
+}
+
+.plan-price span {
+  font-size: 0.9rem;
+  color: var(--muted, #a4aa9e);
+}
+
+.plan-divider {
+  height: 1px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.10);
+  margin-bottom: 25px;
+}
+
+.plan-button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: auto;
+  text-decoration: none;
+}
+
+.welcome-plan-featured .plan-button {
+  background: var(--leaf, #719c61);
+}
+
+.plans-note {
+  margin: 32px auto 0;
+  max-width: 600px;
+  text-align: center;
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: var(--muted, #a4aa9e);
+}
+
+@media (max-width: 700px) {
+  .welcome-plans {
+    padding: 70px 6%;
+  }
+
+  .welcome-plans-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    margin-top: 32px;
+  }
+
+  .welcome-plan-card {
+    min-height: 360px;
+    padding: 26px;
+  }
+
+  .plan-description {
+    min-height: auto;
+  }
+}

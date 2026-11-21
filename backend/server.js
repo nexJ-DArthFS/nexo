@@ -126,34 +126,53 @@ app.use('/api/configuration', configurationRoutes);
 
 const MAX_NOTE_LENGTH = 20000;
 
+// Normaliza el texto para facilitar su clasificación.
+function normalizeForClassification(text) {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[¿¡]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 const rules = [
   {
     category: 'tasks',
     label: 'Tarea',
     patterns: [
-      /\b(tengo que|debo|necesito|hay que|pendiente|por hacer|hacer|terminar|entregar|enviar|revisar|estudiar|preparar|llamar|comprar|investigar)\b/i
+      /\b(tengo que|debo|necesito|hay que|pendiente|por hacer|me falta|falta por|toca|hacer|terminar|entregar|enviar|revisar|estudiar|preparar|llamar|comprar|investigar|resolver|completar|organizar|asistir|presentar|escribir|contactar|hablar con)\b/i
+    ]
+  },
+  {
+    category: 'tasks',
+    label: 'Tarea',
+    patterns: [
+      /\b(hoy|manana|pasado manana|esta tarde|esta noche|el lunes|el martes|el miercoles|el jueves|el viernes|el sabado|el domingo|la proxima semana|antes de|despues de)\b.{0,45}\b(hablar|llamar|enviar|entregar|revisar|estudiar|preparar|comprar|investigar|hacer|terminar|resolver|completar|presentar|escribir|contactar|asistir|organizar|reunirme|reunirse)\b/i,
+      /\b(hablar|llamar|enviar|entregar|revisar|estudiar|preparar|comprar|investigar|hacer|terminar|resolver|completar|presentar|escribir|contactar|asistir|organizar)\b.{0,45}\b(hoy|manana|pasado manana|esta tarde|esta noche|el lunes|el martes|el miercoles|el jueves|el viernes|el sabado|el domingo|la proxima semana)\b/i
     ]
   },
   {
     category: 'objectives',
     label: 'Objetivo',
     patterns: [
-      /\b(mi objetivo|objetivo|meta|quiero lograr|quiero alcanzar|me propongo|aspiración|aspirar a)\b/i
+      /\b(mi objetivo|objetivo|meta|quiero lograr|quiero alcanzar|me propongo|aspiracion|aspirar a)\b/i
     ]
   },
   {
     category: 'questions',
     label: 'Pregunta',
     patterns: [
-      /[¿?]/,
-      /\b(me pregunto|no sé si|cómo puedo|por qué|qué pasaría|averiguar si)\b/i
+      /\?/,
+      /\b(me pregunto|no se si|como puedo|por que|que pasaria|averiguar si)\b/i
     ]
   },
   {
     category: 'decisions',
     label: 'Decisión',
     patterns: [
-      /\b(decidí|he decidido|decisión|elegí|elegir|optaré|voy a escoger|acordamos|acuerdo)\b/i
+      /\b(decidi|he decidido|decision|elegi|elegir|optare|voy a escoger|acordamos|acuerdo)\b/i
     ]
   },
   {
@@ -167,14 +186,14 @@ const rules = [
     category: 'ideas',
     label: 'Idea',
     patterns: [
-      /\b(idea|se me ocurre|podría|podemos|sería interesante|propongo|imagino|crear|diseñar|inventar)\b/i
+      /\b(idea|se me ocurre|podria|podemos|seria interesante|propongo|imagino|crear|disenar|inventar)\b/i
     ]
   },
   {
     category: 'knowledge',
     label: 'Conocimiento',
     patterns: [
-      /\b(aprendí|descubrí|entendí|comprendí|principio|concepto|teorema|definición|significa|consiste en|observé)\b/i
+      /\b(aprendi|descubri|entendi|comprendi|principio|concepto|teorema|definicion|significa|consiste en|observe)\b/i
     ]
   }
 ];
@@ -184,8 +203,10 @@ const rules = [
 // ======================================================
 
 function classifyFragment(text) {
+  const normalized = normalizeForClassification(text);
+
   for (const rule of rules) {
-    if (rule.patterns.some(pattern => pattern.test(text))) {
+    if (rule.patterns.some(pattern => pattern.test(normalized))) {
       return {
         category: rule.category,
         label: rule.label

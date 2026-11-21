@@ -1,3 +1,4 @@
+
 import { Link } from "react-router-dom";
 import "./Welcome.css";
 
@@ -24,6 +25,31 @@ const features = [
   },
 ];
 
+const plans = [
+  {
+    name: "Gratuito",
+    description:
+      "Para quienes quieren organizar sus ideas y comenzar a construir su propio espacio.",
+    price: "$0",
+    period: "Sin costo",
+    audience: "USO PERSONAL",
+    featured: false,
+    button: "Comenzar gratis",
+    link: "/register",
+  },
+  {
+    name: "Institucional",
+    description:
+      "Para instituciones que buscan incorporar NEXORA a sus entornos de trabajo y aprendizaje.",
+    price: "$1",
+    period: "Por usuario",
+    audience: "USO INSTITUCIONAL",
+    featured: true,
+    button: "Consultar plan",
+    link: "/contacto",
+  },
+];
+
 export default function Welcome() {
   return (
     <main className="welcome-page">
@@ -39,6 +65,7 @@ export default function Welcome() {
         <nav className="welcome-nav" aria-label="Navegación principal">
           <a href="#inicio">Inicio</a>
           <a href="#caracteristicas">Características</a>
+          <a href="#planes">Planes</a>
           <a href="#filosofia">Nuestra visión</a>
         </nav>
 
@@ -139,9 +166,7 @@ export default function Welcome() {
             <article className="welcome-feature-card" key={feature.title}>
               <div className="feature-card-top">
                 <span className="feature-icon">{feature.icon}</span>
-                <span className="feature-number">
-                  0{index + 1}
-                </span>
+                <span className="feature-number">0{index + 1}</span>
               </div>
 
               <h2>{feature.title}</h2>
@@ -150,6 +175,60 @@ export default function Welcome() {
             </article>
           ))}
         </div>
+      </section>
+
+      {/* PLANES NEXORA */}
+      <section className="welcome-plans" id="planes">
+        <div className="welcome-section-heading">
+          <span>PLANES NEXORA</span>
+          <p>
+            Un espacio para cada etapa. Comienza gratuitamente
+            y descubre nuevas posibilidades.
+          </p>
+        </div>
+
+        <div className="welcome-plans-grid">
+          {plans.map((plan) => (
+            <article
+              className={`welcome-plan-card ${
+                plan.featured ? "welcome-plan-featured" : ""
+              }`}
+              key={plan.name}
+            >
+              <div className="plan-card-top">
+                <span className="plan-audience">{plan.audience}</span>
+
+                {plan.featured && (
+                  <span className="plan-recommended">
+                    INSTITUCIONAL
+                  </span>
+                )}
+              </div>
+
+              <h2>{plan.name}</h2>
+
+              <p className="plan-description">
+                {plan.description}
+              </p>
+
+              <div className="plan-price">
+                <strong>{plan.price}</strong>
+                <span>{plan.period}</span>
+              </div>
+
+              <div className="plan-divider" />
+
+              <Link to={plan.link} className="welcome-button plan-button">
+                {plan.button} <span>↗</span>
+              </Link>
+            </article>
+          ))}
+        </div>
+
+        <p className="plans-note">
+          ¿Representas a una institución? Contáctanos para conocer
+          las posibilidades de implementación de NEXORA.
+        </p>
       </section>
 
       <section className="welcome-manifesto" id="filosofia">
@@ -171,6 +250,7 @@ export default function Welcome() {
       </section>
 
       <footer className="welcome-footer">
+        <Link to="/contacto">Contacto</Link>
         <Link to="/" className="welcome-footer-brand">✳ NEXORA</Link>
         <span>Un espacio para construir lo que importa.</span>
         <Link to="/login">Ya tengo una cuenta ↗</Link>

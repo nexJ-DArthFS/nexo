@@ -2,14 +2,15 @@
 import { useState } from "react";
 import { useAuth } from "./AuthContext.jsx";
 import { Link, useNavigate } from "react-router-dom";
+import { API_BASE_URL } from "./config/api.js";
 import "./Auth.css";
 
 export default function Auth({ mode = "login" }) {
   const isLogin = mode === "login";
   const navigate = useNavigate();
   const { refreshUser } = useAuth();
-  const [loading, setLoading] = useState(false);
 
+  const [loading, setLoading] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -52,19 +53,19 @@ export default function Auth({ mode = "login" }) {
 
     try {
       const endpoint = isLogin
-        ? "http://localhost:3001/api/auth/login"
-        : "http://localhost:3001/api/auth/register";
+        ? `${API_BASE_URL}/auth/login`
+        : `${API_BASE_URL}/auth/register`;
 
       const payload = isLogin
         ? {
-          email: email.trim(),
-          password,
-        }
+            email: email.trim(),
+            password,
+          }
         : {
-          name: name.trim(),
-          email: email.trim(),
-          password,
-        };
+            name: name.trim(),
+            email: email.trim(),
+            password,
+          };
 
       const response = await fetch(endpoint, {
         method: "POST",
@@ -99,20 +100,11 @@ export default function Auth({ mode = "login" }) {
 
       console.log("SESIÓN:", authenticatedSession);
       console.log("¿ES ADMINISTRADOR?:", isAdmin);
-
-      console.log("SESIÓN:", authenticatedSession);
-      console.log(
-        "PERMISO users.read:",
-        authenticatedSession?.permissions?.some(
-          (permission) => permission.key === "users.read"
-        )
-      );
       console.log("DESTINO:", isAdmin ? "/admin" : "/app");
 
       navigate(isAdmin ? "/admin" : "/app", {
         replace: true,
       });
-
     } catch (error) {
       console.error("Error de autenticación:", error);
 
@@ -130,7 +122,11 @@ export default function Auth({ mode = "login" }) {
       <div className="auth-glow auth-glow-two" />
 
       <header className="auth-header">
-        <Link to="/" className="auth-brand" aria-label="Volver al inicio de NEXORA">
+        <Link
+          to="/"
+          className="auth-brand"
+          aria-label="Volver al inicio de NEXORA"
+        >
           <span className="auth-brand-symbol">✳</span>
           <span>
             NEXORA<span className="auth-brand-dot">.</span>
@@ -186,7 +182,9 @@ export default function Auth({ mode = "login" }) {
               {isLogin ? "TU ESPACIO TE ESPERA" : "COMIENZA TU CAMINO"}
             </span>
 
-            <h2>{isLogin ? "Iniciar sesión" : "Crear una cuenta"}</h2>
+            <h2>
+              {isLogin ? "Iniciar sesión" : "Crear una cuenta"}
+            </h2>
 
             <p>
               {isLogin
@@ -244,11 +242,14 @@ export default function Auth({ mode = "login" }) {
 
             <label className="auth-field">
               <span>Contraseña</span>
+
               <div className="auth-password-wrap">
                 <input
                   type={showPassword ? "text" : "password"}
                   name="password"
-                  autoComplete={isLogin ? "current-password" : "new-password"}
+                  autoComplete={
+                    isLogin ? "current-password" : "new-password"
+                  }
                   placeholder="Mínimo 8 caracteres"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
@@ -259,8 +260,14 @@ export default function Auth({ mode = "login" }) {
                 <button
                   type="button"
                   className="auth-show-password"
-                  onClick={() => setShowPassword((previous) => !previous)}
-                  aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                  onClick={() =>
+                    setShowPassword((previous) => !previous)
+                  }
+                  aria-label={
+                    showPassword
+                      ? "Ocultar contraseña"
+                      : "Mostrar contraseña"
+                  }
                   aria-pressed={showPassword}
                 >
                   {showPassword ? "Ocultar" : "Mostrar"}
@@ -273,6 +280,7 @@ export default function Auth({ mode = "login" }) {
                 <span className="auth-security-note">
                   <span>◇</span> Acceso a tu espacio personal
                 </span>
+
                 <span className="auth-soon-label">
                   Recuperación próximamente
                 </span>
@@ -288,7 +296,9 @@ export default function Auth({ mode = "login" }) {
                   autoComplete="new-password"
                   placeholder="Repite tu contraseña"
                   value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  onChange={(event) =>
+                    setConfirmPassword(event.target.value)
+                  }
                   required
                   minLength={8}
                 />
@@ -317,7 +327,9 @@ export default function Auth({ mode = "login" }) {
           </form>
 
           <p className="auth-switch-copy">
-            {isLogin ? "¿Todavía no tienes cuenta?" : "¿Ya tienes una cuenta?"}{" "}
+            {isLogin
+              ? "¿Todavía no tienes cuenta?"
+              : "¿Ya tienes una cuenta?"}{" "}
             <Link to={isLogin ? "/register" : "/login"}>
               {isLogin ? "Regístrate" : "Inicia sesión"}
             </Link>

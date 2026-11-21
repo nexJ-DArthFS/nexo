@@ -1,12 +1,12 @@
 
-const API_URL = "http://localhost:3001/api";
+import { API_BASE_URL } from "../../config/api.js";
 
 // =========================================
 // UTILIDAD PARA PETICIONES
 // =========================================
 
 async function request(endpoint, options = {}) {
-  const response = await fetch(`${API_URL}${endpoint}`, {
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     credentials: "include",
     cache: "no-store",
     ...options,
@@ -144,7 +144,6 @@ export async function revokeUserAssignment(assignmentId) {
   );
 }
 
-
 // =========================================
 // MOD-03: GESTIÓN DE MÓDULOS
 // =========================================
@@ -189,7 +188,6 @@ export async function getAuditLogs({
     method: "GET",
   });
 }
-
 
 // =========================================
 // CFG-05: CONFIGURACIÓN DEL SISTEMA
