@@ -40,6 +40,8 @@ jobs:
 
       - name: Build frontend
         working-directory: frontend
+        env:
+          VITE_API_URL: https://nexora-backend-yh9s.onrender.com
         run: npm run build
 
       - name: Configure GitHub Pages
@@ -53,9 +55,3 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
-
-        - name: Build frontend
-  working-directory: frontend
-  env:
-    VITE_API_URL: https://nexora-backend-yh9s.onrender.com
-  run: npm run build
