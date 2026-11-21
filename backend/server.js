@@ -29,15 +29,15 @@ const accessRoutes = require('./modules/access/access.routes');
 const app = express();
 
 const PORT = Number(process.env.PORT) || 3001;
-const HOST = process.env.HOST || '127.0.0.1';
+const HOST = '0.0.0.0';
 const isProduction = process.env.NODE_ENV === 'production';
 
 if (!process.env.MONGODB_URI) {
-  throw new Error('Falta MONGODB_URI en el archivo .env');
+  throw new Error('Falta MONGODB_URI en las variables de entorno.');
 }
 
 if (!process.env.SESSION_SECRET) {
-  throw new Error('Falta SESSION_SECRET en el archivo .env');
+  throw new Error('Falta SESSION_SECRET en las variables de entorno.');
 }
 
 if (process.env.SESSION_SECRET.length < 32) {
@@ -103,7 +103,7 @@ app.use(session({
   cookie: {
     httpOnly: true,
     secure: isProduction,
-    sameSite: 'lax',
+    sameSite: isProduction ? 'none' : 'lax',
     maxAge: 1000 * 60 * 60 * 24 * 7,
     path: '/'
   }
@@ -126,7 +126,6 @@ app.use('/api/configuration', configurationRoutes);
 
 const MAX_NOTE_LENGTH = 20000;
 
-// Normaliza el texto para facilitar su clasificación.
 function normalizeForClassification(text) {
   return text
     .normalize('NFD')
@@ -403,7 +402,6 @@ async function createIndexes(db) {
     }
   );
 
-  // Auditoría.
   await db.collection('audit_logs').createIndex(
     { actorId: 1, createdAt: -1 },
     {
@@ -422,7 +420,6 @@ async function createIndexes(db) {
     }
   );
 
-  // MOD-03: módulos.
   await db.collection('modules').createIndex(
     { key: 1 },
     {
@@ -431,7 +428,6 @@ async function createIndexes(db) {
     }
   );
 
-  // CFG-05: configuración del sistema.
   await db.collection('system_settings').createIndex(
     { section: 1, key: 1 },
     {
@@ -455,7 +451,6 @@ async function startServer() {
 
   await createIndexes(db);
 
-  // MOD-03: módulo de análisis de notas.
   await db.collection('modules').updateOne(
     { key: 'noteanalysis' },
     {
@@ -483,7 +478,8 @@ async function startServer() {
       console.log('------------------------------------');
       console.log('NEXORA BACKEND INICIADO');
       console.log(`Servidor: http://${HOST}:${PORT}`);
-      console.log(`Estado: http://${HOST}:${PORT}/api/health`);
+      console.log(`Puerto asignado: ${PORT}`);
+      console.log(`Estado: /api/health`);
       console.log('Autenticación: /api/auth');
       console.log('Usuarios: /api/users');
       console.log('Accesos: /api/access');
@@ -528,6 +524,7 @@ async function shutdown(signal = 'shutdown') {
     await closeDB();
 
     console.log('NEXORA se cerró correctamente.');
+
   } catch (error) {
     console.error('Error durante el cierre:', error.message);
     process.exitCode = 1;
