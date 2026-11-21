@@ -1,5 +1,7 @@
-
 'use strict';
+const {
+  createAccessManagementService
+} = require('./access-management.service');
 
 const express = require('express');
 const { ObjectId } = require('mongodb');
@@ -14,7 +16,9 @@ const {
 } = require('./access.service');
 
 const router = express.Router();
-
+function getManagementService() {
+  return createAccessManagementService(getDB());
+}
 router.use(requireAuth);
 
 const accessScope = () => ({
@@ -204,6 +208,89 @@ router.get(
 
     } catch (error) {
       next(error);
+    }
+  }
+);
+
+
+// ==========================================
+// ACL-04: ASIGNAR UN ROL
+// POST /api/access/assignments
+// ==========================================
+
+router.post(
+  '/assignments',
+  requirePermission('access.manage_roles', accessScope),
+  async (req, res, next) => {
+    try {
+      const result = await getManagementService().assignRole(
+        req.body,
+        req.authUser.id,
+        req
+      );
+
+      return res.status(201).json({
+        success: true,
+        message: 'Rol asignado correctamente.',
+        ...result
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// ==========================================
+// ACL-04: MODIFICAR UNA ASIGNACIÓN
+// PATCH /api/access/assignments/:assignmentId
+// ==========================================
+
+router.patch(
+  '/assignments/:assignmentId',
+  requirePermission('access.manage_roles', accessScope),
+  async (req, res, next) => {
+    try {
+      const assignment = await getManagementService().updateAssignment(
+        req.params.assignmentId,
+        req.body,
+        req.authUser.id,
+        req
+      );
+
+      return res.json({
+        success: true,
+        message: 'Asignación actualizada correctamente.',
+        assignment
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// ==========================================
+// ACL-04: REVOCAR UNA ASIGNACIÓN
+// DELETE /api/access/assignments/:assignmentId
+// ==========================================
+
+router.delete(
+  '/assignments/:assignmentId',
+  requirePermission('access.manage_roles', accessScope),
+  async (req, res, next) => {
+    try {
+      const assignment = await getManagementService().revokeAssignment(
+        req.params.assignmentId,
+        req.authUser.id,
+        req
+      );
+
+      return res.json({
+        success: true,
+        message: 'Asignación revocada correctamente.',
+        assignment
+      });
+    } catch (error) {
+      return next(error);
     }
   }
 );

@@ -87,8 +87,9 @@ export async function updateUserStatus(id, status) {
     body: JSON.stringify({ status }),
   });
 }
+
 // =========================================
-// CONSULTAR CATÁLOGO DE ACCESOS (ACL-02)
+// ACL-02: CONSULTAR CATÁLOGO
 // =========================================
 
 export async function getAccessCatalog() {
@@ -98,7 +99,7 @@ export async function getAccessCatalog() {
 }
 
 // =========================================
-// ACL-03: CONSULTAR ASIGNACIONES DE USUARIO
+// ACL-03: CONSULTAR ASIGNACIONES
 // =========================================
 
 export async function getUserAssignments(userId) {
@@ -106,6 +107,39 @@ export async function getUserAssignments(userId) {
     `/access/users/${encodeURIComponent(userId)}/assignments`,
     {
       method: "GET",
+    }
+  );
+}
+
+// =========================================
+// ACL-04: GESTIÓN DE ASIGNACIONES
+// =========================================
+
+// ASIGNAR ROL
+export async function assignUserRole(data) {
+  return request("/access/assignments", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// MODIFICAR ASIGNACIÓN
+export async function updateUserAssignment(assignmentId, changes) {
+  return request(
+    `/access/assignments/${encodeURIComponent(assignmentId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(changes),
+    }
+  );
+}
+
+// REVOCAR ASIGNACIÓN
+export async function revokeUserAssignment(assignmentId) {
+  return request(
+    `/access/assignments/${encodeURIComponent(assignmentId)}`,
+    {
+      method: "DELETE",
     }
   );
 }
